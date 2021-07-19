@@ -45,10 +45,18 @@ export enum Language {
   PL = 'pl',
 }
 
+export enum InvoiceTemplate {
+  SzlaMost = 'SzlaMost',
+  SzlaAlap = 'SzlaAlap',
+  SzlaNoEnv = 'SzlaNoEnv',
+  Szla8cm = 'Szla8cm',
+  SzlaTomb = 'SzlaTomb',
+}
+
 export interface InvoiceOptions {
   payee?: PayeeDetails
   customer: CustomerDetails
-  eszamla: boolean
+  eInvoice: boolean
   issueDate: string
   completionDate: string
   dueDate: string
@@ -60,7 +68,12 @@ export interface InvoiceOptions {
   orderNumber?: string
   prefix?: string
   email?: EmailDetails
+  receipt?: boolean
+  previewOnly?: boolean
+  template?: InvoiceTemplate
 }
+
+export type ReverseInvoiceOptions = Pick<InvoiceOptions, 'eInvoice' | 'issueDate' | 'completionDate'>
 
 export interface EmailDetails {
   replyTo?: string
@@ -97,4 +110,13 @@ export interface LineItem {
   netUnitPrice: Number
   vatRate: VATRate
   comment?: string
+}
+
+export interface KeyAuth {
+  key: string
+}
+
+export interface CredentialAuth {
+  username: string
+  password: string
 }

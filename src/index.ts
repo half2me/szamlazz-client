@@ -1,5 +1,5 @@
 import { create } from 'xmlbuilder2'
-import type { InvoiceOptions, LineItem } from './types'
+import type { InvoiceOptions, LineItem, ReverseInvoiceOptions, KeyAuth, CredentialAuth } from './types'
 import { Currency, Language, PaymentMethod, NamedVATRate } from './types'
 
 const rootXMLAttrs = {
@@ -10,10 +10,14 @@ const rootXMLAttrs = {
 }
 
 export default class Client {
-  readonly key: string
+  readonly key?: string
+  readonly username?: string
+  readonly password?: string
 
-  constructor(key: string) {
-    this.key = key
+  constructor(auth: KeyAuth | CredentialAuth) {
+    this.key = (<KeyAuth>auth).key
+    this.username = (<CredentialAuth>auth).username
+    this.password = (<CredentialAuth>auth).password
   }
 
   private generateXML(content: object): string {
@@ -21,13 +25,21 @@ export default class Client {
     return doc.end({ prettyPrint: true })
   }
 
+  private authAttributes() {
+    return {
+      szamlaagentkulcs: this.key,
+      felhasznalo: this.username,
+      jelszo: this.password,
+    }
+  }
+
   generateInvoice(options: InvoiceOptions, items: Array<LineItem> = []): string {
     const doc = {
       xmlszamla: {
         ...rootXMLAttrs,
         beallitasok: {
-          szamlaagentkulcs: this.key,
-          eszamla: options.eszamla,
+          ...this.authAttributes(),
+          eszamla: options.eInvoice,
           szamlaLetoltes: false,
           valaszVerzio: 1,
         },
@@ -37,6 +49,10 @@ export default class Client {
           fizetesiHataridoDatum: options.dueDate,
           fizmod: options.paymentMethod,
           szamlaszamElotag: options.prefix,
+          fizetve: options.receipt,
+          elonezetpdf: options.previewOnly,
+          szamlaSablon: options.template,
+          logoExtra: 'mivan', // test this
         },
         elado: {
           bank: options.payee?.bankName,
@@ -77,13 +93,34 @@ export default class Client {
 
     return this.generateXML(doc)
   }
+
+  reverseInvoice(invoice: string, options: ReverseInvoiceOptions): string {
+    const doc = {
+      xmlszamlast: {
+        ...rootXMLAttrs,
+        beallitasok: {
+          ...this.authAttributes(),
+          eszamla: options.eInvoice,
+          szamlaLetoltes: false,
+          valaszVerzio: 1,
+        },
+        fejlec: {
+          szamlaszam: invoice,
+          keltDatum: options.issueDate,
+          teljesitesDatum: options.completionDate,
+        },
+      },
+    }
+
+    return this.generateXML(doc)
+  }
 }
 
-const c = new Client('foo')
+const c = new Client({ username: 'demo', password: 'demo' })
 
 const invoiceSettings: InvoiceOptions = {
   sendEmail: false,
-  eszamla: true,
+  eInvoice: true,
   completionDate: '2022-01-01',
   dueDate: '2022-01-01',
   issueDate: '2022-01-01',
