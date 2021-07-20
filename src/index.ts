@@ -47,7 +47,7 @@ export default class Client {
     // Decode Response
     const obj: any = convert(result, { format: 'object' })
 
-    return {
+    const decoded: InvoiceCreationResponse = {
       success: !!obj.xmlszamlavalasz?.sikeres,
       invoice: obj.xmlszamlavalasz?.szamlaszam,
       net: Number(obj.xmlszamlavalasz?.szamlanetto),
@@ -55,6 +55,14 @@ export default class Client {
       receivables: Number(obj.xmlszamlavalasz?.kintlevoseg),
       url: obj.xmlszamlavalasz?.vevoifiokurl?.$,
     }
+
+    console.log(result)
+
+    if (obj.xmlszamlavalasz?.pdf) {
+      decoded.pdf = Buffer.from(obj.xmlszamlavalasz?.pdf, 'base64')
+    }
+
+    return decoded
   }
 
   private authAttributes() {
@@ -125,8 +133,7 @@ export default class Client {
         })),
       },
     }
-    const invoiceData = await this.sendRequest(doc)
-    console.log(invoiceData)
+    return await this.sendRequest(doc)
   }
 
   async reverseInvoice(invoice: string, options: ReverseInvoiceOptions) {
@@ -147,7 +154,7 @@ export default class Client {
       },
     }
 
-    await this.sendRequest(doc)
+    return await this.sendRequest(doc)
   }
 }
 
@@ -172,18 +179,18 @@ const invoiceSettings: InvoiceOptions = {
   },
 }
 
-console.log(
-  c.generateInvoice(invoiceSettings, [
-    {
-      name: 'test item',
-      amount: 1,
-      amountName: 'pcs',
-      netAmount: 1000,
-      grossAmount: 1000,
-      taxAmount: 0,
-      netUnitPrice: 1000,
-      vatRate: NamedVATRate.AAM,
-      comment: 'yolo',
-    },
-  ]),
-)
+c.generateInvoice(invoiceSettings, [
+  {
+    name: 'test item',
+    amount: 1,
+    amountName: 'pcs',
+    netAmount: 1000,
+    grossAmount: 1000,
+    taxAmount: 0,
+    netUnitPrice: 1000,
+    vatRate: NamedVATRate.AAM,
+    comment: 'yolo',
+  },
+]).then((invoice) => {
+  console.log(invoice)
+})

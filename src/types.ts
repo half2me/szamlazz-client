@@ -129,4 +129,5 @@ export interface InvoiceCreationResponse {
   gross: number
   receivables: number
   url: string
+  pdf?: Buffer
 }
