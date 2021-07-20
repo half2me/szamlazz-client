@@ -1,6 +1,8 @@
 import { create } from 'xmlbuilder2'
 import type { InvoiceOptions, LineItem, ReverseInvoiceOptions, KeyAuth, CredentialAuth } from './types'
 import { Currency, Language, PaymentMethod, NamedVATRate } from './types'
+import fetch from 'node-fetch'
+import FormData from 'form-data'
 
 const rootXMLAttrs = {
   '@xmlns': 'http://www.szamlazz.hu/xmlszamla',
@@ -14,6 +16,8 @@ export default class Client {
   readonly username?: string
   readonly password?: string
 
+  readonly apiUrl = 'https://www.szamlazz.hu/szamla/'
+
   constructor(auth: KeyAuth | CredentialAuth) {
     this.key = (<KeyAuth>auth).key
     this.username = (<CredentialAuth>auth).username
@@ -25,6 +29,15 @@ export default class Client {
     return doc.end({ prettyPrint: true })
   }
 
+  private async sendRequest(xml: string) {
+    const form = new FormData()
+    form.append('action-xmlagentxmlfile', xml, 'action-xmlagentxmlfile')
+
+    const response = await fetch(this.apiUrl, { method: 'POST', body: form })
+    const result = await response.text()
+    console.log(result)
+  }
+
   private authAttributes() {
     return {
       szamlaagentkulcs: this.key,
@@ -33,7 +46,7 @@ export default class Client {
     }
   }
 
-  generateInvoice(options: InvoiceOptions, items: Array<LineItem> = []): string {
+  async generateInvoice(options: InvoiceOptions, items: Array<LineItem> = []) {
     const doc = {
       xmlszamla: {
         ...rootXMLAttrs,
@@ -48,11 +61,14 @@ export default class Client {
           teljesitesDatum: options.completionDate,
           fizetesiHataridoDatum: options.dueDate,
           fizmod: options.paymentMethod,
+          penznem: options.currency,
+          szamlaNyelve: options.language,
+          megjegyzes: options.comment,
           szamlaszamElotag: options.prefix,
-          fizetve: options.receipt,
+          rendelesSzam: options.orderNumber,
+          fizetve: options.settled,
           elonezetpdf: options.previewOnly,
           szamlaSablon: options.template,
-          logoExtra: 'mivan', // test this
         },
         elado: {
           bank: options.payee?.bankName,
@@ -62,13 +78,13 @@ export default class Client {
           emailSzoveg: options.email?.content,
         },
         vevo: {
-          sendEmail: options.sendEmail,
           nev: options.customer.name,
           orszag: options.customer.country,
           irsz: options.customer.zip,
           telepules: options.customer.city,
           cim: options.customer.address,
           email: options.customer.email,
+          sendEmail: options.sendEmail,
           adoszam: options.customer.taxNumber,
           azonosito: options.customer.id,
           telefonszam: options.customer.phone,
@@ -90,8 +106,9 @@ export default class Client {
         })),
       },
     }
-
-    return this.generateXML(doc)
+    const xml = this.generateXML(doc)
+    console.log(xml)
+    await this.sendRequest(xml)
   }
 
   reverseInvoice(invoice: string, options: ReverseInvoiceOptions): string {
@@ -121,21 +138,18 @@ const c = new Client({ username: 'demo', password: 'demo' })
 const invoiceSettings: InvoiceOptions = {
   sendEmail: false,
   eInvoice: true,
-  completionDate: '2022-01-01',
-  dueDate: '2022-01-01',
-  issueDate: '2022-01-01',
+  completionDate: '2021-07-20',
+  dueDate: '2021-07-20',
+  issueDate: '2021-07-20',
   currency: Currency.HUF,
-  language: Language.HU,
+  language: Language.EN,
   paymentMethod: PaymentMethod.Card,
-  payee: {
-    bankAccountNumber: '11111111-22222222-33333333',
-    bankName: 'OTP Bank',
-  },
   customer: {
     address: '1010 Budapest Yolo utca 1-3. 4em 6ajtó',
-    city: '',
+    city: 'Budapest',
     email: 'yolo@gmail.com',
     name: 'Yolo Customer',
+    zip: '1111',
   },
 }
 

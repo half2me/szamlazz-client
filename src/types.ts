@@ -68,9 +68,9 @@ export interface InvoiceOptions {
   orderNumber?: string
   prefix?: string
   email?: EmailDetails
-  receipt?: boolean
   previewOnly?: boolean
   template?: InvoiceTemplate
+  settled?: boolean
 }
 
 export type ReverseInvoiceOptions = Pick<InvoiceOptions, 'eInvoice' | 'issueDate' | 'completionDate'>
@@ -91,7 +91,7 @@ export interface CustomerDetails {
   name: string
   zip?: string
   country?: string
-  city: string
+  city?: string
   address: string
   email?: string
   phone?: string
