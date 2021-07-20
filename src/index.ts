@@ -10,6 +10,7 @@ import type {
 import { Currency, Language, PaymentMethod, NamedVATRate } from './types'
 import fetch from 'node-fetch'
 import FormData from 'form-data'
+import { URL } from 'url'
 
 const rootXMLAttrs = {
   '@xmlns': 'http://www.szamlazz.hu/xmlszamla',
@@ -47,16 +48,24 @@ export default class Client {
     // Decode Response
     const obj: any = convert(result, { format: 'object' })
 
+    // Decode hosted url params:
+    const url = new URL(obj.xmlszamlavalasz?.vevoifiokurl?.$)
+    const pdfUrl = new URL(obj.xmlszamlavalasz?.vevoifiokurl?.$)
+    pdfUrl.searchParams.append('action', 'szamlapdf')
+    pdfUrl.searchParams.delete('page')
+
     const decoded: InvoiceCreationResponse = {
-      success: !!obj.xmlszamlavalasz?.sikeres,
-      invoice: obj.xmlszamlavalasz?.szamlaszam,
+      invoice: {
+        number: obj.xmlszamlavalasz?.szamlaszam,
+        customerAccountUrl: obj.xmlszamlavalasz?.vevoifiokurl?.$,
+        partId: url.searchParams.get('partguid')!,
+        szfejId: url.searchParams.get('szfejguid')!,
+        pdfUrl: pdfUrl.href,
+      },
       net: Number(obj.xmlszamlavalasz?.szamlanetto),
       gross: Number(obj.xmlszamlavalasz?.szamlabrutto),
       receivables: Number(obj.xmlszamlavalasz?.kintlevoseg),
-      url: obj.xmlszamlavalasz?.vevoifiokurl?.$,
     }
-
-    console.log(result)
 
     if (obj.xmlszamlavalasz?.pdf) {
       decoded.pdf = Buffer.from(obj.xmlszamlavalasz?.pdf, 'base64')

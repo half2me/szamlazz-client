@@ -123,11 +123,17 @@ export interface CredentialAuth {
 }
 
 export interface InvoiceCreationResponse {
-  success: boolean
-  invoice: string
+  invoice: HostedInvoice
   net: number
   gross: number
   receivables: number
-  url: string
   pdf?: Buffer
+}
+
+export interface HostedInvoice {
+  number: string
+  partId: string
+  szfejId: string
+  pdfUrl: string
+  customerAccountUrl: string
 }
