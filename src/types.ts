@@ -71,9 +71,10 @@ export interface InvoiceOptions {
   previewOnly?: boolean
   template?: InvoiceTemplate
   settled?: boolean
+  downloadPDF?: boolean
 }
 
-export type ReverseInvoiceOptions = Pick<InvoiceOptions, 'eInvoice' | 'issueDate' | 'completionDate'>
+export type ReverseInvoiceOptions = Pick<InvoiceOptions, 'eInvoice' | 'issueDate' | 'completionDate' | 'downloadPDF'>
 
 export interface EmailDetails {
   replyTo?: string
@@ -119,4 +120,13 @@ export interface KeyAuth {
 export interface CredentialAuth {
   username: string
   password: string
+}
+
+export interface InvoiceCreationResponse {
+  success: boolean
+  invoice: string
+  net: number
+  gross: number
+  receivables: number
+  url: string
 }

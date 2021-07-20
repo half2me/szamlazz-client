@@ -1,5 +1,12 @@
-import { create } from 'xmlbuilder2'
-import type { InvoiceOptions, LineItem, ReverseInvoiceOptions, KeyAuth, CredentialAuth } from './types'
+import { create, convert } from 'xmlbuilder2'
+import type {
+  InvoiceOptions,
+  LineItem,
+  ReverseInvoiceOptions,
+  KeyAuth,
+  CredentialAuth,
+  InvoiceCreationResponse,
+} from './types'
 import { Currency, Language, PaymentMethod, NamedVATRate } from './types'
 import fetch from 'node-fetch'
 import FormData from 'form-data'
@@ -24,18 +31,30 @@ export default class Client {
     this.password = (<CredentialAuth>auth).password
   }
 
-  private generateXML(content: object): string {
+  private async sendRequest(content: object): Promise<InvoiceCreationResponse> {
+    // Build XML
     const doc = create({ encoding: 'UTF-8' }, content)
-    return doc.end({ prettyPrint: true })
-  }
+    const xml = doc.end({ prettyPrint: false })
 
-  private async sendRequest(xml: string) {
+    // Build Request
     const form = new FormData()
     form.append('action-xmlagentxmlfile', xml, 'action-xmlagentxmlfile')
 
+    // Send Request
     const response = await fetch(this.apiUrl, { method: 'POST', body: form })
     const result = await response.text()
-    console.log(result)
+
+    // Decode Response
+    const obj: any = convert(result, { format: 'object' })
+
+    return {
+      success: !!obj.xmlszamlavalasz?.sikeres,
+      invoice: obj.xmlszamlavalasz?.szamlaszam,
+      net: Number(obj.xmlszamlavalasz?.szamlanetto),
+      gross: Number(obj.xmlszamlavalasz?.szamlabrutto),
+      receivables: Number(obj.xmlszamlavalasz?.kintlevoseg),
+      url: obj.xmlszamlavalasz?.vevoifiokurl?.$,
+    }
   }
 
   private authAttributes() {
@@ -53,8 +72,8 @@ export default class Client {
         beallitasok: {
           ...this.authAttributes(),
           eszamla: options.eInvoice,
-          szamlaLetoltes: false,
-          valaszVerzio: 1,
+          szamlaLetoltes: options.downloadPDF ?? false,
+          valaszVerzio: 2,
         },
         fejlec: {
           keltDatum: options.issueDate,
@@ -106,20 +125,19 @@ export default class Client {
         })),
       },
     }
-    const xml = this.generateXML(doc)
-    console.log(xml)
-    await this.sendRequest(xml)
+    const invoiceData = await this.sendRequest(doc)
+    console.log(invoiceData)
   }
 
-  reverseInvoice(invoice: string, options: ReverseInvoiceOptions): string {
+  async reverseInvoice(invoice: string, options: ReverseInvoiceOptions) {
     const doc = {
       xmlszamlast: {
         ...rootXMLAttrs,
         beallitasok: {
           ...this.authAttributes(),
           eszamla: options.eInvoice,
-          szamlaLetoltes: false,
-          valaszVerzio: 1,
+          szamlaLetoltes: options.downloadPDF ?? false,
+          valaszVerzio: 2,
         },
         fejlec: {
           szamlaszam: invoice,
@@ -129,7 +147,7 @@ export default class Client {
       },
     }
 
-    return this.generateXML(doc)
+    await this.sendRequest(doc)
   }
 }
 
@@ -144,6 +162,7 @@ const invoiceSettings: InvoiceOptions = {
   currency: Currency.HUF,
   language: Language.EN,
   paymentMethod: PaymentMethod.Card,
+  settled: true,
   customer: {
     address: '1010 Budapest Yolo utca 1-3. 4em 6ajtó',
     city: 'Budapest',
