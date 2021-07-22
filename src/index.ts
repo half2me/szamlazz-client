@@ -7,7 +7,6 @@ import type {
   CredentialAuth,
   InvoiceCreationResponse,
 } from './types'
-import { Currency, Language, PaymentMethod, NamedVATRate } from './types'
 import fetch from 'node-fetch'
 import FormData from 'form-data'
 import { URL } from 'url'
@@ -37,8 +36,6 @@ export default class Client {
     // Send Request
     const response = await fetch(this.apiUrl, { method: 'POST', body: form })
     const result = await response.text()
-
-    console.log(result)
 
     // Decode Response
     try {
@@ -171,52 +168,3 @@ export default class Client {
     return await this.sendRequest('action-szamla_agent_st', doc)
   }
 }
-
-const test_function = async () => {
-  const c = new Client({ username: 'demo', password: 'demo' })
-
-  const invoiceSettings: InvoiceOptions = {
-    sendEmail: false,
-    eInvoice: true,
-    completionDate: '2021-07-20',
-    dueDate: '2021-07-20',
-    issueDate: '2021-07-20',
-    currency: Currency.HUF,
-    language: Language.EN,
-    paymentMethod: PaymentMethod.Card,
-    settled: true,
-    customer: {
-      address: '1010 Budapest Yolo utca 1-3. 4em 6ajtó',
-      city: 'Budapest',
-      email: 'yolo@gmail.com',
-      name: 'Yolo Customer',
-      zip: '1111',
-    },
-  }
-
-  const invoice = await c.generateInvoice(invoiceSettings, [
-    {
-      name: 'test item',
-      amount: 1,
-      amountName: 'pcs',
-      netAmount: 1000,
-      grossAmount: 1000,
-      taxAmount: 0,
-      netUnitPrice: 1000,
-      vatRate: NamedVATRate.AAM,
-      comment: 'yolo',
-    },
-  ])
-
-  console.log(invoice)
-
-  const reverse = await c.reverseInvoice(invoice.invoice.number, {
-    eInvoice: true,
-    completionDate: '2021-07-20',
-    issueDate: '2021-07-20',
-  })
-
-  console.log(reverse)
-}
-
-test_function().then(() => console.log('done'))
