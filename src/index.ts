@@ -125,8 +125,8 @@ export default class Client {
           telefonszam: options.customer.phone,
           megjegyzes: options.customer.comment,
         },
-        tetelek: items.map((i) => ({
-          tetel: {
+        tetelek: {
+          tetel: items.map((i) => ({
             megnevezes: i.name,
             azonosito: i.id,
             mennyiseg: i.amount,
@@ -137,8 +137,8 @@ export default class Client {
             afaErtek: i.taxAmount,
             bruttoErtek: i.grossAmount,
             megjegyzes: i.comment,
-          },
-        })),
+          })),
+        },
       },
     }
     return await this.sendRequest('action-xmlagentxmlfile', doc)
