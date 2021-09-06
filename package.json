@@ -1,6 +1,6 @@
 {
   "name": "@halftome/szamlazz-client",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Node.js client for using szamlazz.hu API",
   "scripts": {
     "build": "tsc",
@@ -17,8 +17,9 @@
   "files": [
     "dist/**"
   ],
+  "main": "./dist/index.js",
   "exports": {
-    "./": "./dist/"
+    ".": "./dist/index.js"
   },
   "bugs": {
     "url": "https://github.com/half2me/szamlazz-client/issues"

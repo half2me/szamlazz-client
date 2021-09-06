@@ -11,7 +11,7 @@ import fetch from 'node-fetch'
 import FormData from 'form-data'
 import { URL } from 'url'
 
-export default class Client {
+export class Client {
   readonly key?: string
   readonly username?: string
   readonly password?: string
@@ -168,6 +168,9 @@ export default class Client {
     return await this.sendRequest('action-szamla_agent_st', doc)
   }
 }
+
+export default Client
+export * from './types'
 
 /*
 const c = new Client({ username: 'demo', password: 'demo' })
