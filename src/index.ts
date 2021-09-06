@@ -168,3 +168,41 @@ export default class Client {
     return await this.sendRequest('action-szamla_agent_st', doc)
   }
 }
+
+/*
+const c = new Client({ username: 'demo', password: 'demo' })
+const now = new Date().toISOString().split('T')[0]
+
+c.generateInvoice(
+  {
+    eInvoice: true,
+    completionDate: now,
+    dueDate: now,
+    issueDate: now,
+    currency: Currency.HUF,
+    sendEmail: false,
+    language: Language.HU,
+    paymentMethod: PaymentMethod.Card,
+    settled: true,
+    comment: 'some random comment',
+    customer: {
+      name: 'Test',
+      address: 'Test',
+      city: 'Test',
+      zip: 'TST111',
+    },
+  },
+  [
+    {
+      amount: 1,
+      amountName: 'db',
+      grossAmount: 1000,
+      netAmount: 1000,
+      name: 'Test',
+      netUnitPrice: 1000,
+      taxAmount: 0,
+      vatRate: NamedVATRate.AAM,
+    },
+  ],
+).then(console.log)
+*/

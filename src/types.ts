@@ -60,7 +60,7 @@ export interface InvoiceOptions {
   issueDate: string
   completionDate: string
   dueDate: string
-  paymentMethod: PaymentMethod
+  paymentMethod: PaymentMethod | string
   currency: Currency
   language: Language
   sendEmail: boolean
@@ -90,9 +90,9 @@ export interface PayeeDetails {
 export interface CustomerDetails {
   id?: string
   name: string
-  zip?: string
+  zip: string
   country?: string
-  city?: string
+  city: string
   address: string
   email?: string
   phone?: string
