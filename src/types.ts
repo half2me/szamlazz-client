@@ -57,9 +57,9 @@ export interface InvoiceOptions {
   payee?: PayeeDetails
   customer: CustomerDetails
   eInvoice: boolean
-  issueDate: string
-  completionDate: string
-  dueDate: string
+  issueDate?: string
+  completionDate?: string
+  dueDate?: string
   paymentMethod: PaymentMethod | string
   currency: Currency
   language: Language
@@ -122,7 +122,7 @@ export interface CredentialAuth {
   password: string
 }
 
-export interface InvoiceCreationResponse {
+export interface InvoiceItemResponse {
   invoice: HostedInvoice
   net: number
   gross: number

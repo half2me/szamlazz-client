@@ -5,11 +5,14 @@ import type {
   ReverseInvoiceOptions,
   KeyAuth,
   CredentialAuth,
-  InvoiceCreationResponse,
+  InvoiceItemResponse,
 } from './types'
 import fetch from 'node-fetch'
 import FormData from 'form-data'
 import { URL } from 'url'
+import { DateTime } from 'luxon'
+
+const today = () => DateTime.now().setZone('Europe/Budapest').toFormat('yyyy-LL-dd')
 
 export class Client {
   readonly key?: string
@@ -24,22 +27,10 @@ export class Client {
     this.password = (<CredentialAuth>auth).password
   }
 
-  private async sendRequest(type: string, content: object): Promise<InvoiceCreationResponse> {
-    // Build XML
-    const doc = create({ encoding: 'UTF-8' }, content)
-    const xml = doc.end({ prettyPrint: false })
-
-    // Build Request
-    const form = new FormData()
-    form.append(type, xml, type)
-
-    // Send Request
-    const response = await fetch(this.apiUrl, { method: 'POST', body: form })
-    const result = await response.text()
-
+  private decodeResponse(response: string): InvoiceItemResponse {
     // Decode Response
     try {
-      const obj: any = convert(result, { format: 'object' })
+      const obj: any = convert(response, { format: 'object' })
 
       // Decode hosted url params:
       const url = new URL(obj.xmlszamlavalasz?.vevoifiokurl?.$)
@@ -47,7 +38,7 @@ export class Client {
       pdfUrl.searchParams.append('action', 'szamlapdf')
       pdfUrl.searchParams.delete('page')
 
-      const decoded: InvoiceCreationResponse = {
+      const decoded: InvoiceItemResponse = {
         invoice: {
           number: obj.xmlszamlavalasz?.szamlaszam,
           customerAccountUrl: obj.xmlszamlavalasz?.vevoifiokurl?.$,
@@ -66,8 +57,22 @@ export class Client {
 
       return decoded
     } catch (e) {
-      throw new Error(result)
+      throw new Error(response)
     }
+  }
+
+  private async sendRequest(type: string, content: object): Promise<string> {
+    // Build XML
+    const doc = create({ encoding: 'UTF-8' }, content)
+    const xml = doc.end({ prettyPrint: false })
+
+    // Build Request
+    const form = new FormData()
+    form.append(type, xml, type)
+
+    // Send Request
+    const response = await fetch(this.apiUrl, { method: 'POST', body: form })
+    return await response.text()
   }
 
   private authAttributes() {
@@ -79,6 +84,7 @@ export class Client {
   }
 
   async generateInvoice(options: InvoiceOptions, items: Array<LineItem> = []) {
+    const now = today()
     const doc = {
       xmlszamla: {
         '@xmlns': 'http://www.szamlazz.hu/xmlszamla',
@@ -92,9 +98,9 @@ export class Client {
           valaszVerzio: 2,
         },
         fejlec: {
-          keltDatum: options.issueDate,
-          teljesitesDatum: options.completionDate,
-          fizetesiHataridoDatum: options.dueDate,
+          keltDatum: options.issueDate ?? now,
+          teljesitesDatum: options.completionDate ?? now,
+          fizetesiHataridoDatum: options.dueDate ?? now,
           fizmod: options.paymentMethod,
           penznem: options.currency,
           szamlaNyelve: options.language,
@@ -141,10 +147,11 @@ export class Client {
         },
       },
     }
-    return await this.sendRequest('action-xmlagentxmlfile', doc)
+    return this.decodeResponse(await this.sendRequest('action-xmlagentxmlfile', doc))
   }
 
   async reverseInvoice(invoice: string, options: ReverseInvoiceOptions) {
+    const now = today()
     const doc = {
       xmlszamlast: {
         '@xmlns': 'http://www.szamlazz.hu/xmlszamlast',
@@ -159,29 +166,43 @@ export class Client {
         },
         fejlec: {
           szamlaszam: invoice,
-          keltDatum: options.issueDate,
-          teljesitesDatum: options.completionDate,
+          keltDatum: options.issueDate ?? now,
+          teljesitesDatum: options.completionDate ?? now,
         },
       },
     }
 
-    return await this.sendRequest('action-szamla_agent_st', doc)
+    return this.decodeResponse(await this.sendRequest('action-szamla_agent_st', doc))
+  }
+
+  async testConnection(): Promise<boolean> {
+    const doc = {
+      xmlszamlaxml: {
+        '@xmlns': 'http://www.szamlazz.hu/xmlszamlaxml',
+        '@xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+        '@xsi:schemaLocation':
+          'http://www.szamlazz.hu/xmlszamlaxml https://www.szamlazz.hu/szamla/docs/xsds/agentxml/xmlszamlaxml.xsd',
+        ...this.authAttributes(),
+        szamlaszam: 'NEMLETEZIKSOHANEMISFOG',
+      },
+    }
+
+    const r = await this.sendRequest('action-szamla_agent_xml', doc)
+    const obj: any = convert(r, { format: 'object' })
+    return obj.xmlszamlavalasz?.hibakod.$ == 7
   }
 }
 
 export default Client
 export * from './types'
 
-/*
+/**
+
 const c = new Client({ username: 'demo', password: 'demo' })
-const now = new Date().toISOString().split('T')[0]
 
 c.generateInvoice(
   {
     eInvoice: true,
-    completionDate: now,
-    dueDate: now,
-    issueDate: now,
     currency: Currency.HUF,
     sendEmail: false,
     language: Language.HU,
@@ -207,5 +228,8 @@ c.generateInvoice(
       vatRate: NamedVATRate.AAM,
     },
   ],
-).then(console.log)
-*/
+).then((r) => {
+  console.log(r)
+  c.reverseInvoice(r.invoice.number, { eInvoice: true }).then((r) => console.log(r))
+})
+ */
