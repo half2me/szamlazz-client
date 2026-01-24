@@ -148,7 +148,6 @@ export class Client {
   }
 
   async reverseInvoice(invoice: string, options: ReverseInvoiceOptions) {
-    const now = new Date()
     const doc = {
       xmlszamlast: {
         '@xmlns': 'http://www.szamlazz.hu/xmlszamlast',
@@ -163,8 +162,8 @@ export class Client {
         },
         fejlec: {
           szamlaszam: invoice,
-          keltDatum: options.issueDate ?? now,
-          teljesitesDatum: options.completionDate ?? now,
+          keltDatum: toDateStr(options.issueDate),
+          teljesitesDatum: toDateStr(options.completionDate),
         },
       },
     }
@@ -192,41 +191,3 @@ export class Client {
 
 export default Client
 export * from './types.js'
-
-/**
-
-const c = new Client({ username: 'demo', password: 'demo' })
-
-c.generateInvoice(
-  {
-    eInvoice: true,
-    currency: Currency.HUF,
-    sendEmail: false,
-    language: Language.HU,
-    paymentMethod: PaymentMethod.Card,
-    settled: true,
-    comment: 'some random comment',
-    customer: {
-      name: 'Test',
-      address: 'Test',
-      city: 'Test',
-      zip: 'TST111',
-    },
-  },
-  [
-    {
-      amount: 1,
-      amountName: 'db',
-      grossAmount: 1000,
-      netAmount: 1000,
-      name: 'Test',
-      netUnitPrice: 1000,
-      taxAmount: 0,
-      vatRate: NamedVATRate.AAM,
-    },
-  ],
-).then((r) => {
-  console.log(r)
-  c.reverseInvoice(r.invoice.number, { eInvoice: true }).then((r) => console.log(r))
-})
- */
