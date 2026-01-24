@@ -6,13 +6,10 @@ import type {
   KeyAuth,
   CredentialAuth,
   InvoiceItemResponse,
-} from './types'
-import fetch from 'node-fetch'
-import FormData from 'form-data'
+} from './types.js'
 import { URL } from 'url'
-import { DateTime } from 'luxon'
 
-const today = () => DateTime.now().setZone('Europe/Budapest').toFormat('yyyy-LL-dd')
+const toDateStr = (date: Date) => date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Budapest' })
 
 export class Client {
   readonly key?: string
@@ -68,7 +65,7 @@ export class Client {
 
     // Build Request
     const form = new FormData()
-    form.append(type, xml, type)
+    form.append(type, new Blob([xml], { type: 'application/xml' }), type)
 
     // Send Request
     const response = await fetch(this.apiUrl, { method: 'POST', body: form })
@@ -84,7 +81,6 @@ export class Client {
   }
 
   async generateInvoice(options: InvoiceOptions, items: Array<LineItem> = []) {
-    const now = today()
     const doc = {
       xmlszamla: {
         '@xmlns': 'http://www.szamlazz.hu/xmlszamla',
@@ -96,11 +92,12 @@ export class Client {
           eszamla: options.eInvoice,
           szamlaLetoltes: options.downloadPDF ?? false,
           valaszVerzio: 2,
+          szamlaKulsoAzon: options.externalId,
         },
         fejlec: {
-          keltDatum: options.issueDate ?? now,
-          teljesitesDatum: options.completionDate ?? now,
-          fizetesiHataridoDatum: options.dueDate ?? now,
+          keltDatum: toDateStr(options.issueDate),
+          teljesitesDatum: toDateStr(options.completionDate),
+          fizetesiHataridoDatum: toDateStr(options.dueDate),
           fizmod: options.paymentMethod,
           penznem: options.currency,
           szamlaNyelve: options.language,
@@ -114,7 +111,7 @@ export class Client {
         elado: {
           bank: options.payee?.bankName,
           bankszamlaszam: options.payee?.bankAccountNumber,
-          emailReplyTo: options.email?.replyTo,
+          emailReplyto: options.email?.replyTo,
           emailTargy: options.email?.subject,
           emailSzoveg: options.email?.content,
         },
@@ -151,7 +148,7 @@ export class Client {
   }
 
   async reverseInvoice(invoice: string, options: ReverseInvoiceOptions) {
-    const now = today()
+    const now = new Date()
     const doc = {
       xmlszamlast: {
         '@xmlns': 'http://www.szamlazz.hu/xmlszamlast',
@@ -194,7 +191,7 @@ export class Client {
 }
 
 export default Client
-export * from './types'
+export * from './types.js'
 
 /**
 

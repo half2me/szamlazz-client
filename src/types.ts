@@ -27,23 +27,9 @@ export enum PaymentMethod {
   Card = 'bankkártya',
 }
 
-export enum Currency {
-  HUF = 'HUF',
-}
+export type Currency = 'HUF' | 'EUR' | 'USD' | 'GBP' | 'CHF' | 'JPY' | 'CNY' | 'CZK' | 'PLN' | 'RON'
 
-export enum Language {
-  HU = 'hu',
-  EN = 'en',
-  DE = 'de',
-  IT = 'it',
-  RO = 'ro',
-  SK = 'sk',
-  HR = 'hr',
-  FR = 'fr',
-  ES = 'es',
-  CZ = 'cz',
-  PL = 'pl',
-}
+export type LanguageCode = 'hu' | 'en' | 'de' | 'it' | 'ro' | 'sk' | 'hr' | 'fr' | 'es' | 'cz' | 'pl' | 'bg' | 'nl' | 'ru' | 'si'
 
 export enum InvoiceTemplate {
   SzlaMost = 'SzlaMost',
@@ -57,12 +43,12 @@ export interface InvoiceOptions {
   payee?: PayeeDetails
   customer: CustomerDetails
   eInvoice: boolean
-  issueDate?: string
-  completionDate?: string
-  dueDate?: string
+  issueDate: Date
+  completionDate: Date
+  dueDate: Date
   paymentMethod: PaymentMethod | string
   currency: Currency
-  language: Language
+  language: LanguageCode
   sendEmail: boolean
   comment?: string
   orderNumber?: string
@@ -72,6 +58,7 @@ export interface InvoiceOptions {
   template?: InvoiceTemplate
   settled?: boolean
   downloadPDF?: boolean
+  externalId?: string
 }
 
 export type ReverseInvoiceOptions = Pick<InvoiceOptions, 'eInvoice' | 'issueDate' | 'completionDate' | 'downloadPDF'>
@@ -103,12 +90,12 @@ export interface CustomerDetails {
 export interface LineItem {
   id?: string
   name: string
-  amount: Number
+  amount: number
   amountName: string
-  netAmount: Number
-  taxAmount: Number
-  grossAmount: Number
-  netUnitPrice: Number
+  netAmount: number
+  taxAmount: number
+  grossAmount: number
+  netUnitPrice: number
   vatRate: VATRate
   comment?: string
 }
