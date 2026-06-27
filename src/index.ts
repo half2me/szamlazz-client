@@ -158,12 +158,38 @@ export class Client {
    * amounts, followed by the corrected line items. Partner details, payment
    * method and currency cannot be changed by a correction invoice.
    *
-   * @param invoice The number of the invoice being corrected.
+   * Each call produces a brand-new invoice with its own number — nothing is
+   * edited in place — and that number is returned in the response. Corrections
+   * form a chain: to correct a correction (or to undo one), pass the number of
+   * the most recent invoice in the chain, i.e. the one you are actually
+   * correcting — NOT the original. So you always feed the previous call's
+   * returned number into the next call:
+   *
+   * ```ts
+   * const inv = await client.generateInvoice(opts, items)          // E-001
+   * const c1  = await client.correctInvoice(inv.invoice.number, opts, deltas) // → E-002, refs E-001
+   * const c2  = await client.correctInvoice(c1.invoice.number, opts, more)    // → E-003, refs E-002
+   * ```
+   *
+   * The chain (original → … → latest) is jointly valid and has unlimited depth.
+   * Once an invoice has been corrected, neither it nor any correction in the
+   * chain can be stornoed via {@link reverseInvoice} — undo by issuing a further
+   * correction with negated deltas instead.
+   *
+   * @param invoice The number of the invoice being corrected — the latest link
+   *   in the correction chain, not necessarily the original invoice.
    */
   async correctInvoice(invoice: string, options: InvoiceOptions, items: Array<LineItem> = []) {
     return this.generateInvoice({ ...options, correctedInvoiceNumber: invoice }, items)
   }
 
+  /**
+   * Creates a reversal/storno invoice that fully voids an existing invoice.
+   *
+   * Note: an invoice that has already been corrected — and any correction
+   * invoice in its chain — cannot be stornoed; szamlazz.hu rejects the request.
+   * Use {@link correctInvoice} with negated deltas to undo a correction instead.
+   */
   async reverseInvoice(invoice: string, options: ReverseInvoiceOptions) {
     const doc = {
       xmlszamlast: {
