@@ -27,6 +27,10 @@ const defaultOptions: InvoiceOptions = {
   },
 }
 
+// A correction invoice can't change the partner, so it takes no `customer` —
+// the client sends an empty no-op block on our behalf.
+const { customer: _customer, ...correctionOptions } = defaultOptions
+
 const defaultItems: LineItem[] = [
   {
     amount: 2,
@@ -173,7 +177,7 @@ describe.each([
       taxAmount: 810,
       vatRate: 27,
     }
-    const correction1 = await client.correctInvoice(original.invoice.number, defaultOptions, [
+    const correction1 = await client.correctInvoice(original.invoice.number, correctionOptions, [
       negate(widget),
       replacement,
     ])
@@ -183,7 +187,7 @@ describe.each([
     // 3. Correct again, repricing the last item. Every correction references the ORIGINAL
     //    invoice — a correction invoice itself is not correctable (API error 222).
     const taxExemptRepriced: LineItem = { ...taxExempt, netUnitPrice: 800, netAmount: 2400, grossAmount: 2400 }
-    const correction2 = await client.correctInvoice(original.invoice.number, defaultOptions, [
+    const correction2 = await client.correctInvoice(original.invoice.number, correctionOptions, [
       negate(taxExempt),
       taxExemptRepriced,
     ])
@@ -194,7 +198,11 @@ describe.each([
     //    correction) by negating everything that is currently still valid.
     //    Effective state after steps 2-3: widget removed, service fee kept, item repriced.
     const currentState = [serviceFee, replacement, taxExemptRepriced]
-    const finalReversal = await client.correctInvoice(original.invoice.number, defaultOptions, currentState.map(negate))
+    const finalReversal = await client.correctInvoice(
+      original.invoice.number,
+      correctionOptions,
+      currentState.map(negate),
+    )
     expect(finalReversal.invoice.number).toBeDefined()
     expect(finalReversal.invoice.number).not.toBe(correction2.invoice.number)
   })
