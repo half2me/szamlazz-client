@@ -62,16 +62,40 @@ const negate = (i: LineItem): LineItem => ({
   grossAmount: -i.grossAmount,
 })
 
+/**
+ * Retries an invoice-creating API call on szamlazz.hu error 468 ("Többen számláztok
+ * ugyanabban a pillanatban ugyanazzal a számlaszám előtaggal"), which is returned when
+ * two invoices hit the same number prefix at the same instant. The demo account is
+ * shared (across our own CI/publish jobs and everyone else using it), so a collision is
+ * transient — back off and retry rather than failing the run.
+ */
+async function withRetry<T>(fn: () => Promise<T>, attempts = 5): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const transient = /\[468\]|próbáld meg kicsit később/i.test(message)
+      if (!transient || attempt >= attempts) throw err
+      await new Promise((resolve) => setTimeout(resolve, Math.min(8000, 500 * 2 ** attempt)))
+    }
+  }
+}
+
 async function generateAndReverse(client: Client, options?: Partial<InvoiceOptions>, items?: LineItem[]) {
-  const result = await client.generateInvoice({ ...defaultOptions, ...options }, items ?? defaultItems)
+  const result = await withRetry(() =>
+    client.generateInvoice({ ...defaultOptions, ...options }, items ?? defaultItems),
+  )
 
   expect(result.invoice.number).toBeDefined()
 
-  const reverseResult = await client.reverseInvoice(result.invoice.number, {
-    eInvoice: true,
-    issueDate: new Date(),
-    completionDate: new Date(),
-  })
+  const reverseResult = await withRetry(() =>
+    client.reverseInvoice(result.invoice.number, {
+      eInvoice: true,
+      issueDate: new Date(),
+      completionDate: new Date(),
+    }),
+  )
 
   expect(reverseResult.invoice.number).toBeDefined()
 
@@ -86,22 +110,22 @@ describe.each([
     expect(await client.testConnection()).toBe(true)
   })
 
-  it('should generate and reverse an invoice', { timeout: 30000 }, async () => {
+  it('should generate and reverse an invoice', { timeout: 60000 }, async () => {
     const result = await generateAndReverse(client)
     expect(result.net).toBe(7500)
     expect(result.gross).toBe(8580)
   })
 
-  it('should download PDF when requested', { timeout: 30000 }, async () => {
+  it('should download PDF when requested', { timeout: 60000 }, async () => {
     const result = await generateAndReverse(client, { downloadPDF: true })
     expect(result.pdf).toBeInstanceOf(Buffer)
   })
 
-  it('should run a full correction chain', { timeout: 60000 }, async () => {
+  it('should run a full correction chain', { timeout: 120000 }, async () => {
     const [widget, serviceFee, taxExempt] = defaultItems
 
     // 1. Original invoice with 3 items.
-    const original = await client.generateInvoice(defaultOptions, defaultItems)
+    const original = await withRetry(() => client.generateInvoice(defaultOptions, defaultItems))
     expect(original.invoice.number).toBeDefined()
 
     // 2. Correct the ORIGINAL: remove the widget and add a new item in its place.
@@ -115,20 +139,18 @@ describe.each([
       taxAmount: 810,
       vatRate: 27,
     }
-    const correction1 = await client.correctInvoice(original.invoice.number, defaultOptions, [
-      negate(widget),
-      replacement,
-    ])
+    const correction1 = await withRetry(() =>
+      client.correctInvoice(original.invoice.number, defaultOptions, [negate(widget), replacement]),
+    )
     expect(correction1.invoice.number).toBeDefined()
     expect(correction1.invoice.number).not.toBe(original.invoice.number)
 
     // 3. Correct again, repricing the last item. Every correction references the ORIGINAL
     //    invoice — a correction invoice itself is not correctable (API error 222).
     const taxExemptRepriced: LineItem = { ...taxExempt, netUnitPrice: 800, netAmount: 2400, grossAmount: 2400 }
-    const correction2 = await client.correctInvoice(original.invoice.number, defaultOptions, [
-      negate(taxExempt),
-      taxExemptRepriced,
-    ])
+    const correction2 = await withRetry(() =>
+      client.correctInvoice(original.invoice.number, defaultOptions, [negate(taxExempt), taxExemptRepriced]),
+    )
     expect(correction2.invoice.number).toBeDefined()
     expect(correction2.invoice.number).not.toBe(correction1.invoice.number)
 
@@ -136,10 +158,8 @@ describe.each([
     //    correction) by negating everything that is currently still valid.
     //    Effective state after steps 2-3: widget removed, service fee kept, item repriced.
     const currentState = [serviceFee, replacement, taxExemptRepriced]
-    const finalReversal = await client.correctInvoice(
-      original.invoice.number,
-      defaultOptions,
-      currentState.map(negate),
+    const finalReversal = await withRetry(() =>
+      client.correctInvoice(original.invoice.number, defaultOptions, currentState.map(negate)),
     )
     expect(finalReversal.invoice.number).toBeDefined()
     expect(finalReversal.invoice.number).not.toBe(correction2.invoice.number)
