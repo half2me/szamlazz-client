@@ -104,6 +104,8 @@ export class Client {
           megjegyzes: options.comment,
           szamlaszamElotag: options.prefix,
           rendelesSzam: options.orderNumber,
+          helyesbitoszamla: options.correctedInvoiceNumber ? true : undefined,
+          helyesbitettSzamlaszam: options.correctedInvoiceNumber,
           fizetve: options.settled,
           elonezetpdf: options.previewOnly,
           szamlaSablon: options.template,
@@ -147,6 +149,49 @@ export class Client {
     return this.decodeResponse(await this.sendRequest('action-xmlagentxmlfile', doc))
   }
 
+  /**
+   * Creates a correction invoice (helyesbítő számla) for an existing invoice.
+   *
+   * Unlike a reversal/storno, the original invoice stays valid; the original
+   * and the correction invoice are valid together. The `items` must describe
+   * the correction deltas — typically the original line items with negated
+   * amounts, followed by the corrected line items. Partner details, payment
+   * method and currency cannot be changed by a correction invoice.
+   *
+   * Each call produces a brand-new invoice with its own number — nothing is
+   * edited in place — and that number is returned in the response.
+   *
+   * `invoice` must always be the ORIGINAL invoice number, even when applying
+   * several corrections. A correction invoice is not itself correctable: the
+   * API rejects an attempt to correct a correction (error 222, "a helyesbítő
+   * számla által hivatkozott számla nem helyesbíthető"). The same original may
+   * be corrected repeatedly, and the original plus all of its corrections are
+   * jointly valid:
+   *
+   * ```ts
+   * const inv = await client.generateInvoice(opts, items)          // E-001
+   * const c1  = await client.correctInvoice(inv.invoice.number, opts, deltas) // → E-002, refs E-001
+   * const c2  = await client.correctInvoice(inv.invoice.number, opts, more)   // → E-003, refs E-001
+   * ```
+   *
+   * To "reverse" a corrected invoice, issue one more correction (again against
+   * the original) whose deltas negate the current net state — storno via
+   * {@link reverseInvoice} is not allowed once an invoice has been corrected.
+   *
+   * @param invoice The number of the ORIGINAL invoice being corrected — never a
+   *   previous correction invoice.
+   */
+  async correctInvoice(invoice: string, options: InvoiceOptions, items: Array<LineItem> = []) {
+    return this.generateInvoice({ ...options, correctedInvoiceNumber: invoice }, items)
+  }
+
+  /**
+   * Creates a reversal/storno invoice that fully voids an existing invoice.
+   *
+   * Note: an invoice that has already been corrected — and any correction
+   * invoice in its chain — cannot be stornoed; szamlazz.hu rejects the request.
+   * Use {@link correctInvoice} with negated deltas to undo a correction instead.
+   */
   async reverseInvoice(invoice: string, options: ReverseInvoiceOptions) {
     const doc = {
       xmlszamlast: {

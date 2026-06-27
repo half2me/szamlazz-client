@@ -30,5 +30,6 @@ This is a TypeScript client library for the [szamlazz.hu](https://szamlazz.hu) H
 ### Client Methods
 
 - `generateInvoice(options, items)` - Creates an invoice, returns invoice number and optional PDF
+- `correctInvoice(invoiceNumber, options, items)` - Creates a correction invoice (helyesbítő számla) for an existing invoice; the original stays valid alongside the correction. The `items` are the correction deltas (typically the original items negated plus the corrected items). Equivalent to `generateInvoice` with `correctedInvoiceNumber` set.
 - `reverseInvoice(invoiceNumber, options)` - Creates a reversal/storno invoice
 - `testConnection()` - Validates API credentials by checking for a known error code

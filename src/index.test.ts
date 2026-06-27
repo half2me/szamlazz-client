@@ -53,6 +53,15 @@ const defaultItems: LineItem[] = [
   },
 ]
 
+/** Negates a line item so it cancels out its positive counterpart in a correction. */
+const negate = (i: LineItem): LineItem => ({
+  ...i,
+  amount: -i.amount,
+  netAmount: -i.netAmount,
+  taxAmount: -i.taxAmount,
+  grossAmount: -i.grossAmount,
+})
+
 async function generateAndReverse(client: Client, options?: Partial<InvoiceOptions>, items?: LineItem[]) {
   const result = await client.generateInvoice({ ...defaultOptions, ...options }, items ?? defaultItems)
 
@@ -86,6 +95,54 @@ describe.each([
   it('should download PDF when requested', { timeout: 30000 }, async () => {
     const result = await generateAndReverse(client, { downloadPDF: true })
     expect(result.pdf).toBeInstanceOf(Buffer)
+  })
+
+  it('should run a full correction chain', { timeout: 60000 }, async () => {
+    const [widget, serviceFee, taxExempt] = defaultItems
+
+    // 1. Original invoice with 3 items.
+    const original = await client.generateInvoice(defaultOptions, defaultItems)
+    expect(original.invoice.number).toBeDefined()
+
+    // 2. Correct the ORIGINAL: remove the widget and add a new item in its place.
+    const replacement: LineItem = {
+      amount: 1,
+      amountName: 'db',
+      grossAmount: 3810,
+      netAmount: 3000,
+      name: 'Replacement gadget',
+      netUnitPrice: 3000,
+      taxAmount: 810,
+      vatRate: 27,
+    }
+    const correction1 = await client.correctInvoice(original.invoice.number, defaultOptions, [
+      negate(widget),
+      replacement,
+    ])
+    expect(correction1.invoice.number).toBeDefined()
+    expect(correction1.invoice.number).not.toBe(original.invoice.number)
+
+    // 3. Correct again, repricing the last item. Every correction references the ORIGINAL
+    //    invoice — a correction invoice itself is not correctable (API error 222).
+    const taxExemptRepriced: LineItem = { ...taxExempt, netUnitPrice: 800, netAmount: 2400, grossAmount: 2400 }
+    const correction2 = await client.correctInvoice(original.invoice.number, defaultOptions, [
+      negate(taxExempt),
+      taxExemptRepriced,
+    ])
+    expect(correction2.invoice.number).toBeDefined()
+    expect(correction2.invoice.number).not.toBe(correction1.invoice.number)
+
+    // 4. Final correction (also against the original): reverse the whole thing (storno via
+    //    correction) by negating everything that is currently still valid.
+    //    Effective state after steps 2-3: widget removed, service fee kept, item repriced.
+    const currentState = [serviceFee, replacement, taxExemptRepriced]
+    const finalReversal = await client.correctInvoice(
+      original.invoice.number,
+      defaultOptions,
+      currentState.map(negate),
+    )
+    expect(finalReversal.invoice.number).toBeDefined()
+    expect(finalReversal.invoice.number).not.toBe(correction2.invoice.number)
   })
 })
 
