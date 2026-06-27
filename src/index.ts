@@ -104,6 +104,8 @@ export class Client {
           megjegyzes: options.comment,
           szamlaszamElotag: options.prefix,
           rendelesSzam: options.orderNumber,
+          helyesbitoszamla: options.correctedInvoiceNumber ? true : undefined,
+          helyesbitettSzamlaszam: options.correctedInvoiceNumber,
           fizetve: options.settled,
           elonezetpdf: options.previewOnly,
           szamlaSablon: options.template,
@@ -145,6 +147,21 @@ export class Client {
       },
     }
     return this.decodeResponse(await this.sendRequest('action-xmlagentxmlfile', doc))
+  }
+
+  /**
+   * Creates a correction invoice (helyesbítő számla) for an existing invoice.
+   *
+   * Unlike a reversal/storno, the original invoice stays valid; the original
+   * and the correction invoice are valid together. The `items` must describe
+   * the correction deltas — typically the original line items with negated
+   * amounts, followed by the corrected line items. Partner details, payment
+   * method and currency cannot be changed by a correction invoice.
+   *
+   * @param invoice The number of the invoice being corrected.
+   */
+  async correctInvoice(invoice: string, options: InvoiceOptions, items: Array<LineItem> = []) {
+    return this.generateInvoice({ ...options, correctedInvoiceNumber: invoice }, items)
   }
 
   async reverseInvoice(invoice: string, options: ReverseInvoiceOptions) {

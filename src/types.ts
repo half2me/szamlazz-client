@@ -59,6 +59,13 @@ export interface InvoiceOptions {
   settled?: boolean
   downloadPDF?: boolean
   externalId?: string
+  /**
+   * When set, the invoice is issued as a correction invoice (helyesbítő számla)
+   * for the invoice with this number. The line items should contain the
+   * correction deltas (typically the original items negated and the corrected
+   * items added).
+   */
+  correctedInvoiceNumber?: string
 }
 
 export type ReverseInvoiceOptions = Pick<InvoiceOptions, 'eInvoice' | 'issueDate' | 'completionDate' | 'downloadPDF'>
