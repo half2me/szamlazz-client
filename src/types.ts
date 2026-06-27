@@ -61,11 +61,11 @@ export interface InvoiceOptions {
   externalId?: string
   /**
    * When set, the invoice is issued as a correction invoice (helyesbítő számla)
-   * for the invoice with this number. This must be the latest invoice in the
-   * correction chain — the one being corrected — which is the original invoice
-   * for a first correction, or the previous correction when correcting a
-   * correction. The line items should contain the correction deltas (typically
-   * the original items negated and the corrected items added).
+   * for the invoice with this number. This must always be the original invoice
+   * number — a correction invoice itself cannot be corrected, but the same
+   * original may be corrected repeatedly. The line items should contain the
+   * correction deltas (typically the original items negated and the corrected
+   * items added).
    */
   correctedInvoiceNumber?: string
 }
