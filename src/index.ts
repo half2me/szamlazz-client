@@ -7,9 +7,16 @@ import type {
   CredentialAuth,
   InvoiceItemResponse,
 } from './types.js'
+import { parseError, SzamlazzErrorCategory, SzamlazzErrorCode } from './errors.js'
 import { URL } from 'url'
 
 const toDateStr = (date: Date) => date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Budapest' })
+
+/** Raw Számla Agent reply. Errors can arrive in the body, in the headers, or in both. */
+interface AgentResponse {
+  body: string
+  headers: Headers
+}
 
 export class Client {
   readonly key?: string
@@ -24,10 +31,17 @@ export class Client {
     this.password = (<CredentialAuth>auth).password
   }
 
-  private decodeResponse(response: string): InvoiceItemResponse {
+  /**
+   * @throws {SzamlazzError} when szamlazz.hu reported an error code, so callers can
+   *   branch on {@link SzamlazzError.code} / {@link SzamlazzError.category}.
+   */
+  private decodeResponse({ body, headers }: AgentResponse): InvoiceItemResponse {
+    const error = parseError(body, headers)
+    if (error) throw error
+
     // Decode Response
     try {
-      const obj: any = convert(response, { format: 'object' })
+      const obj: any = convert(body, { format: 'object' })
 
       // Decode hosted url params:
       const url = new URL(obj.xmlszamlavalasz?.vevoifiokurl?.$)
@@ -54,11 +68,11 @@ export class Client {
 
       return decoded
     } catch (e) {
-      throw new Error(response)
+      throw new Error(body)
     }
   }
 
-  private async sendRequest(type: string, content: object): Promise<string> {
+  private async sendRequest(type: string, content: object): Promise<AgentResponse> {
     // Build XML
     const doc = create({ encoding: 'UTF-8' }, content)
     const xml = doc.end({ prettyPrint: false })
@@ -69,7 +83,7 @@ export class Client {
 
     // Send Request
     const response = await fetch(this.apiUrl, { method: 'POST', body: form })
-    return await response.text()
+    return { body: await response.text(), headers: response.headers }
   }
 
   private authAttributes() {
@@ -216,6 +230,20 @@ export class Client {
     return this.decodeResponse(await this.sendRequest('action-szamla_agent_st', doc))
   }
 
+  /**
+   * Validates the credentials by querying an invoice number that cannot exist.
+   *
+   * Returns `true` when szamlazz.hu accepted the credentials (it answers with
+   * {@link SzamlazzErrorCode.MissingData} because the invoice is not found) and
+   * `false` when it rejected them.
+   *
+   * Anything else — an unpaid subscription ({@link SzamlazzErrorCode.SubscriptionProblem}),
+   * maintenance, a blocked account — is thrown as a {@link SzamlazzError} rather
+   * than reported as bad credentials, since those need a different response from
+   * the caller.
+   *
+   * @throws {SzamlazzError} when the request failed for a reason unrelated to the credentials.
+   */
   async testConnection(): Promise<boolean> {
     const doc = {
       xmlszamlaxml: {
@@ -228,11 +256,18 @@ export class Client {
       },
     }
 
-    const r = await this.sendRequest('action-szamla_agent_xml', doc)
-    const obj: any = convert(r, { format: 'object' })
-    return obj.xmlszamlavalasz?.hibakod.$ == 7
+    const { body, headers } = await this.sendRequest('action-szamla_agent_xml', doc)
+    const error = parseError(body, headers)
+
+    // No error at all should not happen for an invoice number that cannot exist,
+    // but it still means the credentials were accepted.
+    if (!error) return true
+    if (error.code === SzamlazzErrorCode.MissingData) return true
+    if (error.category === SzamlazzErrorCategory.Authentication) return false
+    throw error
   }
 }
 
 export default Client
 export * from './types.js'
+export * from './errors.js'

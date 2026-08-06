@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import type { InvoiceOptions, LineItem } from './types.js'
-import { Client, NamedVATRate, PaymentMethod } from './index.js'
+import {
+  Client,
+  NamedVATRate,
+  PaymentMethod,
+  SzamlazzError,
+  SzamlazzErrorCategory,
+  SzamlazzErrorCode,
+} from './index.js'
 
 const defaultOptions: InvoiceOptions = {
   eInvoice: true,
@@ -136,11 +143,7 @@ describe.each([
     //    correction) by negating everything that is currently still valid.
     //    Effective state after steps 2-3: widget removed, service fee kept, item repriced.
     const currentState = [serviceFee, replacement, taxExemptRepriced]
-    const finalReversal = await client.correctInvoice(
-      original.invoice.number,
-      defaultOptions,
-      currentState.map(negate),
-    )
+    const finalReversal = await client.correctInvoice(original.invoice.number, defaultOptions, currentState.map(negate))
     expect(finalReversal.invoice.number).toBeDefined()
     expect(finalReversal.invoice.number).not.toBe(correction2.invoice.number)
   })
@@ -155,5 +158,34 @@ describe('Client (invalid auth)', () => {
   it('should reject an invalid API key', async () => {
     const client = new Client({ key: 'invalid-api-key' })
     expect(await client.testConnection()).toBe(false)
+  })
+
+  it('should throw a typed login error when issuing an invoice', async () => {
+    const client = new Client({ username: 'invalid', password: 'invalid' })
+
+    await expect(client.generateInvoice(defaultOptions, defaultItems)).rejects.toMatchObject({
+      name: 'SzamlazzError',
+      code: SzamlazzErrorCode.LoginFailed,
+      category: SzamlazzErrorCategory.Authentication,
+    })
+  })
+})
+
+describe('Client (API errors)', () => {
+  const client = new Client({ username: 'demo', password: 'demo' })
+
+  it('should throw a typed error for an item whose totals do not add up', { timeout: 30000 }, async () => {
+    // Only the net formula is violated (999 != 1000 * 2); VAT and gross still add up,
+    // so szamlazz.hu reports the net mismatch rather than a follow-up gross mismatch.
+    const broken: LineItem = { ...defaultItems[0], netAmount: 999, grossAmount: 999 }
+
+    const error = await client.generateInvoice(defaultOptions, [broken]).catch((e) => e)
+
+    expect(error).toBeInstanceOf(SzamlazzError)
+    expect(error.code).toBe(SzamlazzErrorCode.ItemNetValueMismatch)
+    expect(error.category).toBe(SzamlazzErrorCategory.Validation)
+    // The message names the offending product, which is only in the response body.
+    expect(error.message).toContain(broken.name)
+    expect(error.response).toContain('<hibakod>')
   })
 })
