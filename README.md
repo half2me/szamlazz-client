@@ -17,6 +17,44 @@ const invoice = await c.generateInvoice(
 )
 ```
 
+### Looking up an existing document
+
+`findInvoice()` retrieves a document szamlazz.hu has already issued, by invoice number, by the
+`orderNumber` it was created with, or by its `externalId`:
+
+```javascript
+const invoice = await client.findInvoice({ orderNumber: 'order-1234' })
+
+if (invoice) {
+  console.log(invoice.number, invoice.totals.gross, invoice.items.length)
+}
+```
+
+It returns `null` when no such document exists, rather than throwing — szamlazz.hu reports that with
+error code 7, the same code it uses for a request that left out a required field, and only the client
+knows which of the two it sent. Every other failure still throws a `SzamlazzError`.
+
+Pass exactly one identifier. Naming none, naming two, or passing an empty string throws a `TypeError`
+before anything is sent, because szamlazz.hu would answer such a request with that same code 7 — so an
+unchecked one would come back as a confident `null`, and a caller looking a document up to avoid
+issuing a duplicate would take that as permission to issue one.
+
+This is the safe way to make issuing an invoice idempotent. If a call to `generateInvoice()` fails
+without telling you whether the document was created — a timeout, a dropped connection, or error 56,
+which means the invoice exists but its notification email did not go out — look it up by order number
+before retrying, and adopt what you find instead of issuing a second document.
+
+Two caveats worth knowing:
+
+- The response carries no link to the document. The customer-account URL that `generateInvoice()`
+  derives its `pdfUrl` from is only handed out when a document is created, so a queried invoice has a
+  number but no URL. Pass `{ pdf: true }` to get the PDF bytes inline instead — it is left off by
+  default because it is base64-encoded into the same response.
+- Every VAT rate comes back as a percentage. A line issued with a named rate reports `vatRate: 0` and
+  names its code in `vatType` (`AAM`, `TAM`, ...).
+
+Only documents issued through szamlazz.hu itself can be retrieved this way.
+
 ### Error handling
 
 When szamlazz.hu rejects a request it answers with an error code (`<hibakod>` in the XML body, or the

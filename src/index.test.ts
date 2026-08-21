@@ -104,6 +104,57 @@ describe.each([
     expect(result.pdf).toBeInstanceOf(Buffer)
   })
 
+  it('should find an issued invoice by each of its identifiers', { timeout: 60000 }, async () => {
+    // Unique per run: szamlazz.hu accounts can be set to reject a repeated order
+    // number (error 71/152), and a lookup by order number returns the newest match.
+    const stamp = Date.now()
+    const orderNumber = `order-${stamp}`
+    const externalId = `ext-${stamp}`
+    const issued = await client.generateInvoice({ ...defaultOptions, orderNumber, externalId }, defaultItems)
+
+    // All three selectors must resolve to the same document. A not-found assertion
+    // alone would not prove any of them are wired up, since szamlazz.hu answers an
+    // unrecognised selector and a misspelled one with the same code 7.
+    const byOrder = await client.findInvoice({ orderNumber })
+    expect(byOrder?.number).toBe(issued.invoice.number)
+
+    const byExternalId = await client.findInvoice({ externalId })
+    expect(byExternalId?.number).toBe(issued.invoice.number)
+
+    const found = await client.findInvoice({ invoiceNumber: issued.invoice.number })
+    expect(found).not.toBeNull()
+    expect(found!.number).toBe(issued.invoice.number)
+    expect(found!.totals).toEqual({ net: 7500, tax: 1080, gross: 8580 })
+    expect(found!.currency).toBe('HUF')
+    expect(found!.customer.name).toBe(defaultOptions.customer.name)
+
+    // One line item per item sent, in order. A queried document reports every
+    // rate as a percentage, so the two exempt items come back as 0% and name
+    // their code in `vatType` instead.
+    expect(found!.items.map((i) => i.name)).toEqual(defaultItems.map((i) => i.name))
+    expect(found!.items.map((i) => i.vatRate)).toEqual([0, 27, 0])
+    expect(found!.items.map((i) => i.vatType)).toEqual([NamedVATRate.AAM, undefined, NamedVATRate.TAM])
+    expect(found!.items[1]).toMatchObject({ amount: 1, netAmount: 4000, taxAmount: 1080, grossAmount: 5080 })
+
+    // The PDF is opt-in, since it is base64-encoded into the same response.
+    expect(found!.pdf).toBeUndefined()
+    const withPdf = await client.findInvoice({ invoiceNumber: issued.invoice.number }, { pdf: true })
+    expect(withPdf?.pdf).toBeInstanceOf(Buffer)
+    expect(withPdf!.pdf!.length).toBeGreaterThan(0)
+
+    await client.reverseInvoice(issued.invoice.number, {
+      eInvoice: true,
+      issueDate: new Date(),
+      completionDate: new Date(),
+    })
+  })
+
+  it('should return null for a document that does not exist', async () => {
+    expect(await client.findInvoice({ invoiceNumber: 'NEMLETEZIKSOHANEMISFOG' })).toBeNull()
+    expect(await client.findInvoice({ orderNumber: 'NEMLETEZIKSOHANEMISFOG' })).toBeNull()
+    expect(await client.findInvoice({ externalId: 'NEMLETEZIKSOHANEMISFOG' })).toBeNull()
+  })
+
   it('should run a full correction chain', { timeout: 60000 }, async () => {
     const [widget, serviceFee, taxExempt] = defaultItems
 
@@ -149,6 +200,23 @@ describe.each([
   })
 })
 
+describe('Client (query validation)', () => {
+  const client = new Client({ username: 'demo', password: 'demo' })
+
+  // These must throw before anything is sent. szamlazz.hu answers a request with
+  // no usable selector with code 7 — the same code findInvoice reads as "no such
+  // document" — so an unvalidated empty or ambiguous query would come back as a
+  // confident null, and a caller checking before issuing would issue a duplicate.
+  it.each([
+    { name: 'no identifier', query: {} },
+    { name: 'two identifiers', query: { invoiceNumber: 'E-001', orderNumber: 'order-1' } },
+    { name: 'an empty identifier', query: { orderNumber: '' } },
+    { name: 'a whitespace-only identifier', query: { externalId: '   ' } },
+  ])('should reject a lookup with $name', async ({ query }) => {
+    await expect(client.findInvoice(query as never)).rejects.toBeInstanceOf(TypeError)
+  })
+})
+
 describe('Client (invalid auth)', () => {
   it('should reject invalid credentials', async () => {
     const client = new Client({ username: 'invalid', password: 'invalid' })
@@ -166,6 +234,15 @@ describe('Client (invalid auth)', () => {
     await expect(client.generateInvoice(defaultOptions, defaultItems)).rejects.toMatchObject({
       name: 'SzamlazzError',
       code: SzamlazzErrorCode.LoginFailed,
+      category: SzamlazzErrorCategory.Authentication,
+    })
+  })
+
+  it('should throw rather than report "not found" when looking up with bad credentials', async () => {
+    const client = new Client({ username: 'invalid', password: 'invalid' })
+
+    await expect(client.findInvoice({ invoiceNumber: 'NEMLETEZIKSOHANEMISFOG' })).rejects.toMatchObject({
+      name: 'SzamlazzError',
       category: SzamlazzErrorCategory.Authentication,
     })
   })

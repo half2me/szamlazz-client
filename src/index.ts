@@ -1,13 +1,17 @@
 import { create, convert } from 'xmlbuilder2'
 import type {
   InvoiceOptions,
+  InvoiceQuery,
   LineItem,
+  QueriedInvoice,
+  QueryOptions,
   ReverseInvoiceOptions,
   KeyAuth,
   CredentialAuth,
   InvoiceItemResponse,
 } from './types.js'
-import { parseError, SzamlazzErrorCategory, SzamlazzErrorCode } from './errors.js'
+import { isSzamlazzError, parseError, SzamlazzErrorCategory, SzamlazzErrorCode } from './errors.js'
+import { decodeQueriedInvoice } from './query.js'
 import { URL } from 'url'
 
 const toDateStr = (date: Date) => date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Budapest' })
@@ -16,6 +20,37 @@ const toDateStr = (date: Date) => date.toLocaleDateString('sv-SE', { timeZone: '
 interface AgentResponse {
   body: string
   headers: Headers
+}
+
+const QUERY_IDENTIFIERS = ['invoiceNumber', 'orderNumber', 'externalId'] as const
+
+/**
+ * Rejects a lookup that names no document, or more than one.
+ *
+ * This has to be checked rather than left to the type, because getting it wrong
+ * fails in the worst possible direction: szamlazz.hu answers a request with no
+ * usable selector with code 7, the very code {@link Client.findInvoice} reads as
+ * "no such document". An empty or ambiguous query would therefore come back as a
+ * confident `null` — and a caller looking a document up to avoid issuing a
+ * duplicate would take that as permission to issue one.
+ *
+ * @throws {TypeError} which is deliberately not a `SzamlazzError`: nothing was sent, and the caller's own code is what needs fixing.
+ */
+const assertOneIdentifier = (query: InvoiceQuery): void => {
+  const named = QUERY_IDENTIFIERS.filter((key) => query[key] !== undefined && query[key] !== null)
+
+  if (named.length !== 1) {
+    throw new TypeError(
+      `findInvoice needs exactly one of ${QUERY_IDENTIFIERS.join(', ')}, ` +
+        (named.length ? `but was given ${named.join(' and ')}` : 'but was given none'),
+    )
+  }
+
+  const [key] = named
+  const value = query[key]
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError(`findInvoice was given an empty ${key}`)
+  }
 }
 
 export class Client {
@@ -245,6 +280,46 @@ export class Client {
    * @throws {SzamlazzError} when the request failed for a reason unrelated to the credentials.
    */
   async testConnection(): Promise<boolean> {
+    try {
+      // A `null` result means szamlazz.hu looked the invoice up and did not find
+      // it, which it can only do once it has accepted the credentials.
+      await this.findInvoice({ invoiceNumber: 'NEMLETEZIKSOHANEMISFOG' })
+      return true
+    } catch (e) {
+      if (isSzamlazzError(e) && e.category === SzamlazzErrorCategory.Authentication) return false
+      throw e
+    }
+  }
+
+  /**
+   * Looks up a document szamlazz.hu has already issued.
+   *
+   * Identify it by its invoice number, by the `orderNumber` given to
+   * {@link generateInvoice}, or by the `externalId` — the latter two only find
+   * the document if they were set when it was created. Where several documents
+   * share an order number, szamlazz.hu returns the most recent one.
+   *
+   * **Returns `null` when no such document exists** instead of throwing.
+   * szamlazz.hu reports a missing document with
+   * {@link SzamlazzErrorCode.MissingData}, the same code it uses for a request
+   * that left out a required field, and this client is the only layer that
+   * knows a lookup was what it sent — so callers would otherwise all have to
+   * special-case code 7 to ask a question whose negative answer is not an
+   * error. Every other failure still throws.
+   *
+   * The response carries no link to the document: the customer-account URL that
+   * {@link generateInvoice} derives `pdfUrl` from is only handed out when the
+   * document is created. Pass `{ pdf: true }` to get the PDF bytes inline instead.
+   *
+   * Only documents issued through szamlazz.hu itself can be retrieved this way.
+   *
+   * @throws {SzamlazzError} when the request failed for any reason other than the document not existing.
+   * @throws {TypeError} when `query` names no document or more than one — that would otherwise
+   *   come back from szamlazz.hu as code 7 and be reported as a confident "not found".
+   */
+  async findInvoice(query: InvoiceQuery, options: QueryOptions = {}): Promise<QueriedInvoice | null> {
+    assertOneIdentifier(query)
+
     const doc = {
       xmlszamlaxml: {
         '@xmlns': 'http://www.szamlazz.hu/xmlszamlaxml',
@@ -252,19 +327,22 @@ export class Client {
         '@xsi:schemaLocation':
           'http://www.szamlazz.hu/xmlszamlaxml https://www.szamlazz.hu/szamla/docs/xsds/agentxml/xmlszamlaxml.xsd',
         ...this.authAttributes(),
-        szamlaszam: 'NEMLETEZIKSOHANEMISFOG',
+        szamlaszam: query.invoiceNumber,
+        rendelesSzam: query.orderNumber,
+        pdf: options.pdf ?? false,
+        szamlaKulsoAzon: query.externalId,
       },
     }
 
     const { body, headers } = await this.sendRequest('action-szamla_agent_xml', doc)
     const error = parseError(body, headers)
 
-    // No error at all should not happen for an invoice number that cannot exist,
-    // but it still means the credentials were accepted.
-    if (!error) return true
-    if (error.code === SzamlazzErrorCode.MissingData) return true
-    if (error.category === SzamlazzErrorCategory.Authentication) return false
-    throw error
+    if (error) {
+      if (error.code === SzamlazzErrorCode.MissingData) return null
+      throw error
+    }
+
+    return decodeQueriedInvoice(body)
   }
 }
 
