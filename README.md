@@ -34,6 +34,11 @@ It returns `null` when no such document exists, rather than throwing — szamlaz
 error code 7, the same code it uses for a request that left out a required field, and only the client
 knows which of the two it sent. Every other failure still throws a `SzamlazzError`.
 
+Pass exactly one identifier. Naming none, naming two, or passing an empty string throws a `TypeError`
+before anything is sent, because szamlazz.hu would answer such a request with that same code 7 — so an
+unchecked one would come back as a confident `null`, and a caller looking a document up to avoid
+issuing a duplicate would take that as permission to issue one.
+
 This is the safe way to make issuing an invoice idempotent. If a call to `generateInvoice()` fails
 without telling you whether the document was created — a timeout, a dropped connection, or error 56,
 which means the invoice exists but its notification email did not go out — look it up by order number

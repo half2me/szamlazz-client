@@ -139,8 +139,16 @@ export interface HostedInvoice {
  * if the same value was passed to {@link InvoiceOptions.orderNumber} or
  * {@link InvoiceOptions.externalId} when it was created; when several documents
  * share an order number, szamlazz.hu returns the most recent one.
+ *
+ * Exactly one identifier, and the other two typed `never` so that supplying two
+ * at once is a type error rather than a silently ambiguous request.
+ * {@link Client.findInvoice} enforces the same rule at runtime, for JavaScript
+ * callers and for values that only take shape at runtime.
  */
-export type InvoiceQuery = { invoiceNumber: string } | { orderNumber: string } | { externalId: string }
+export type InvoiceQuery =
+  | { invoiceNumber: string; orderNumber?: never; externalId?: never }
+  | { orderNumber: string; invoiceNumber?: never; externalId?: never }
+  | { externalId: string; invoiceNumber?: never; orderNumber?: never }
 
 export interface QueryOptions {
   /**

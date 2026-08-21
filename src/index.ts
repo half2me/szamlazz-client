@@ -22,6 +22,37 @@ interface AgentResponse {
   headers: Headers
 }
 
+const QUERY_IDENTIFIERS = ['invoiceNumber', 'orderNumber', 'externalId'] as const
+
+/**
+ * Rejects a lookup that names no document, or more than one.
+ *
+ * This has to be checked rather than left to the type, because getting it wrong
+ * fails in the worst possible direction: szamlazz.hu answers a request with no
+ * usable selector with code 7, the very code {@link Client.findInvoice} reads as
+ * "no such document". An empty or ambiguous query would therefore come back as a
+ * confident `null` — and a caller looking a document up to avoid issuing a
+ * duplicate would take that as permission to issue one.
+ *
+ * @throws {TypeError} which is deliberately not a `SzamlazzError`: nothing was sent, and the caller's own code is what needs fixing.
+ */
+const assertOneIdentifier = (query: InvoiceQuery): void => {
+  const named = QUERY_IDENTIFIERS.filter((key) => query[key] !== undefined && query[key] !== null)
+
+  if (named.length !== 1) {
+    throw new TypeError(
+      `findInvoice needs exactly one of ${QUERY_IDENTIFIERS.join(', ')}, ` +
+        (named.length ? `but was given ${named.join(' and ')}` : 'but was given none'),
+    )
+  }
+
+  const [key] = named
+  const value = query[key]
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError(`findInvoice was given an empty ${key}`)
+  }
+}
+
 export class Client {
   readonly key?: string
   readonly username?: string
@@ -283,8 +314,12 @@ export class Client {
    * Only documents issued through szamlazz.hu itself can be retrieved this way.
    *
    * @throws {SzamlazzError} when the request failed for any reason other than the document not existing.
+   * @throws {TypeError} when `query` names no document or more than one — that would otherwise
+   *   come back from szamlazz.hu as code 7 and be reported as a confident "not found".
    */
   async findInvoice(query: InvoiceQuery, options: QueryOptions = {}): Promise<QueriedInvoice | null> {
+    assertOneIdentifier(query)
+
     const doc = {
       xmlszamlaxml: {
         '@xmlns': 'http://www.szamlazz.hu/xmlszamlaxml',
@@ -292,10 +327,10 @@ export class Client {
         '@xsi:schemaLocation':
           'http://www.szamlazz.hu/xmlszamlaxml https://www.szamlazz.hu/szamla/docs/xsds/agentxml/xmlszamlaxml.xsd',
         ...this.authAttributes(),
-        szamlaszam: 'invoiceNumber' in query ? query.invoiceNumber : undefined,
-        rendelesSzam: 'orderNumber' in query ? query.orderNumber : undefined,
+        szamlaszam: query.invoiceNumber,
+        rendelesSzam: query.orderNumber,
         pdf: options.pdf ?? false,
-        szamlaKulsoAzon: 'externalId' in query ? query.externalId : undefined,
+        szamlaKulsoAzon: query.externalId,
       },
     }
 

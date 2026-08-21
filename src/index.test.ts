@@ -104,14 +104,22 @@ describe.each([
     expect(result.pdf).toBeInstanceOf(Buffer)
   })
 
-  it('should find an issued invoice by order number and by invoice number', { timeout: 60000 }, async () => {
+  it('should find an issued invoice by each of its identifiers', { timeout: 60000 }, async () => {
     // Unique per run: szamlazz.hu accounts can be set to reject a repeated order
     // number (error 71/152), and a lookup by order number returns the newest match.
-    const orderNumber = `order-${Date.now()}`
-    const issued = await client.generateInvoice({ ...defaultOptions, orderNumber }, defaultItems)
+    const stamp = Date.now()
+    const orderNumber = `order-${stamp}`
+    const externalId = `ext-${stamp}`
+    const issued = await client.generateInvoice({ ...defaultOptions, orderNumber, externalId }, defaultItems)
 
+    // All three selectors must resolve to the same document. A not-found assertion
+    // alone would not prove any of them are wired up, since szamlazz.hu answers an
+    // unrecognised selector and a misspelled one with the same code 7.
     const byOrder = await client.findInvoice({ orderNumber })
     expect(byOrder?.number).toBe(issued.invoice.number)
+
+    const byExternalId = await client.findInvoice({ externalId })
+    expect(byExternalId?.number).toBe(issued.invoice.number)
 
     const found = await client.findInvoice({ invoiceNumber: issued.invoice.number })
     expect(found).not.toBeNull()
@@ -189,6 +197,23 @@ describe.each([
     const finalReversal = await client.correctInvoice(original.invoice.number, defaultOptions, currentState.map(negate))
     expect(finalReversal.invoice.number).toBeDefined()
     expect(finalReversal.invoice.number).not.toBe(correction2.invoice.number)
+  })
+})
+
+describe('Client (query validation)', () => {
+  const client = new Client({ username: 'demo', password: 'demo' })
+
+  // These must throw before anything is sent. szamlazz.hu answers a request with
+  // no usable selector with code 7 — the same code findInvoice reads as "no such
+  // document" — so an unvalidated empty or ambiguous query would come back as a
+  // confident null, and a caller checking before issuing would issue a duplicate.
+  it.each([
+    { name: 'no identifier', query: {} },
+    { name: 'two identifiers', query: { invoiceNumber: 'E-001', orderNumber: 'order-1' } },
+    { name: 'an empty identifier', query: { orderNumber: '' } },
+    { name: 'a whitespace-only identifier', query: { externalId: '   ' } },
+  ])('should reject a lookup with $name', async ({ query }) => {
+    await expect(client.findInvoice(query as never)).rejects.toBeInstanceOf(TypeError)
   })
 })
 
