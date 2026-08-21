@@ -1,13 +1,17 @@
 import { create, convert } from 'xmlbuilder2'
 import type {
   InvoiceOptions,
+  InvoiceQuery,
   LineItem,
+  QueriedInvoice,
+  QueryOptions,
   ReverseInvoiceOptions,
   KeyAuth,
   CredentialAuth,
   InvoiceItemResponse,
 } from './types.js'
-import { parseError, SzamlazzErrorCategory, SzamlazzErrorCode } from './errors.js'
+import { isSzamlazzError, parseError, SzamlazzErrorCategory, SzamlazzErrorCode } from './errors.js'
+import { decodeQueriedInvoice } from './query.js'
 import { URL } from 'url'
 
 const toDateStr = (date: Date) => date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Budapest' })
@@ -245,6 +249,42 @@ export class Client {
    * @throws {SzamlazzError} when the request failed for a reason unrelated to the credentials.
    */
   async testConnection(): Promise<boolean> {
+    try {
+      // A `null` result means szamlazz.hu looked the invoice up and did not find
+      // it, which it can only do once it has accepted the credentials.
+      await this.findInvoice({ invoiceNumber: 'NEMLETEZIKSOHANEMISFOG' })
+      return true
+    } catch (e) {
+      if (isSzamlazzError(e) && e.category === SzamlazzErrorCategory.Authentication) return false
+      throw e
+    }
+  }
+
+  /**
+   * Looks up a document szamlazz.hu has already issued.
+   *
+   * Identify it by its invoice number, by the `orderNumber` given to
+   * {@link generateInvoice}, or by the `externalId` — the latter two only find
+   * the document if they were set when it was created. Where several documents
+   * share an order number, szamlazz.hu returns the most recent one.
+   *
+   * **Returns `null` when no such document exists** instead of throwing.
+   * szamlazz.hu reports a missing document with
+   * {@link SzamlazzErrorCode.MissingData}, the same code it uses for a request
+   * that left out a required field, and this client is the only layer that
+   * knows a lookup was what it sent — so callers would otherwise all have to
+   * special-case code 7 to ask a question whose negative answer is not an
+   * error. Every other failure still throws.
+   *
+   * The response carries no link to the document: the customer-account URL that
+   * {@link generateInvoice} derives `pdfUrl` from is only handed out when the
+   * document is created. Pass `{ pdf: true }` to get the PDF bytes inline instead.
+   *
+   * Only documents issued through szamlazz.hu itself can be retrieved this way.
+   *
+   * @throws {SzamlazzError} when the request failed for any reason other than the document not existing.
+   */
+  async findInvoice(query: InvoiceQuery, options: QueryOptions = {}): Promise<QueriedInvoice | null> {
     const doc = {
       xmlszamlaxml: {
         '@xmlns': 'http://www.szamlazz.hu/xmlszamlaxml',
@@ -252,19 +292,22 @@ export class Client {
         '@xsi:schemaLocation':
           'http://www.szamlazz.hu/xmlszamlaxml https://www.szamlazz.hu/szamla/docs/xsds/agentxml/xmlszamlaxml.xsd',
         ...this.authAttributes(),
-        szamlaszam: 'NEMLETEZIKSOHANEMISFOG',
+        szamlaszam: 'invoiceNumber' in query ? query.invoiceNumber : undefined,
+        rendelesSzam: 'orderNumber' in query ? query.orderNumber : undefined,
+        pdf: options.pdf ?? false,
+        szamlaKulsoAzon: 'externalId' in query ? query.externalId : undefined,
       },
     }
 
     const { body, headers } = await this.sendRequest('action-szamla_agent_xml', doc)
     const error = parseError(body, headers)
 
-    // No error at all should not happen for an invoice number that cannot exist,
-    // but it still means the credentials were accepted.
-    if (!error) return true
-    if (error.code === SzamlazzErrorCode.MissingData) return true
-    if (error.category === SzamlazzErrorCategory.Authentication) return false
-    throw error
+    if (error) {
+      if (error.code === SzamlazzErrorCode.MissingData) return null
+      throw error
+    }
+
+    return decodeQueriedInvoice(body)
   }
 }
 

@@ -1,4 +1,5 @@
 import { convert } from 'xmlbuilder2'
+import { textOf } from './xml.js'
 
 /**
  * Error codes returned by szamlazz.hu in the `<hibakod>` element of the XML
@@ -217,14 +218,6 @@ export class SzamlazzError extends Error {
 
 /** Narrows an unknown value caught in a `catch` block to a {@link SzamlazzError}. */
 export const isSzamlazzError = (e: unknown): e is SzamlazzError => e instanceof SzamlazzError
-
-/** Reads an XML text node, which xmlbuilder2 represents as a string or as `{ $: string }` for CDATA. */
-const textOf = (node: unknown): string | undefined => {
-  if (typeof node === 'string') return node
-  if (typeof node === 'number') return String(node)
-  if (node && typeof node === 'object' && '$' in node) return textOf((node as { $: unknown }).$)
-  return undefined
-}
 
 /** szamlazz.hu form-encodes the `szlahu_error` header, so spaces arrive as `+`. */
 const decodeHeader = (value: string) => {
