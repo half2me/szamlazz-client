@@ -5,6 +5,13 @@ on:
     tags:
       - "v*"
 
+# The test suite hits the shared szamlazz.hu demo account, which rejects concurrent
+# invoice creation (error 468). Serialize across CI and Publish via a shared group so
+# our own jobs never run the live tests at the same time. Publishing is never cancelled.
+concurrency:
+  group: szamlazz-live-api
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
