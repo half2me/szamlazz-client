@@ -74,20 +74,18 @@ const negate = (i: LineItem): LineItem => ({
 })
 
 /**
- * Retries an invoice-creating API call on szamlazz.hu error 468 ("Többen számláztok
- * ugyanabban a pillanatban ugyanazzal a számlaszám előtaggal"), which is returned when
- * two invoices hit the same number prefix at the same instant. The demo account is
- * shared (across our own CI/publish jobs and everyone else using it), so a collision is
- * transient — back off and retry rather than failing the run. Genuine errors (e.g. 222)
- * do not match and still fail fast.
+ * Retries an invoice-creating API call on szamlazz.hu error 468 (concurrent
+ * invoicing — two documents took the same number prefix at the same instant).
+ * The demo account is shared (across our own CI/publish jobs and everyone else
+ * using it), so a collision is transient: back off and retry. Matching is on the
+ * structured error code, so genuine failures are never retried on wording alone.
  */
 async function withRetry<T>(fn: () => Promise<T>, attempts = 5): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await fn()
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      const transient = /\[468\]|próbáld meg kicsit később/i.test(message)
+      const transient = err instanceof SzamlazzError && err.code === SzamlazzErrorCode.ConcurrentInvoicing
       if (!transient || attempt >= attempts) throw err
       await new Promise((resolve) => setTimeout(resolve, Math.min(8000, 500 * 2 ** attempt)))
     }

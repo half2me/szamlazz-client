@@ -119,6 +119,14 @@ export enum SzamlazzErrorCode {
   /** No date on the invoice may be earlier than 2010-01-01. */
   DateTooEarly = 396,
 
+  /**
+   * Two documents tried to take the same invoice-number prefix at the same
+   * instant ("Többen számláztok ugyanabban a pillanatban ugyanazzal a
+   * számlaszám előtaggal"). Transient — the same request typically succeeds
+   * on retry after a short back-off.
+   */
+  ConcurrentInvoicing = 468,
+
   /** The maximum number of data erasure codes for an item has been reached. */
   TooManyDataErasureCodes = 537,
 
@@ -180,6 +188,7 @@ const categories: Record<number, SzamlazzErrorCategory> = {
   [SzamlazzErrorCode.ReceiptPaymentMismatch]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.InvalidVatRate]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.DateTooEarly]: SzamlazzErrorCategory.Validation,
+  [SzamlazzErrorCode.ConcurrentInvoicing]: SzamlazzErrorCategory.Service,
   [SzamlazzErrorCode.TooManyDataErasureCodes]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.DataErasureCodeNotAllowedInDemo]: SzamlazzErrorCategory.Account,
   [SzamlazzErrorCode.DataErasureCodeNotEnabled]: SzamlazzErrorCategory.Account,
