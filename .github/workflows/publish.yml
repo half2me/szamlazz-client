@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+# No concurrency group here on purpose: a shared fixed group only keeps the latest
+# pending run, so a release queued behind CI could be cancelled by a newer CI run.
+# Concurrent demo-account collisions (error 468) are handled by the retry in the tests.
+
 jobs:
   publish:
     runs-on: ubuntu-latest

@@ -70,6 +70,16 @@ export interface InvoiceOptions {
   correctedInvoiceNumber?: string
 }
 
+/**
+ * Options for a correction invoice (helyesbítő számla). Identical to
+ * {@link InvoiceOptions} but without `customer`: a correction cannot change the
+ * partner, so szamlazz.hu treats the customer block as a no-op and only requires
+ * it to be structurally present. The client sends empty values on your behalf,
+ * so there is nothing to pass. `correctedInvoiceNumber` is also omitted because
+ * the original invoice number is given as a separate argument.
+ */
+export type CorrectionInvoiceOptions = Omit<InvoiceOptions, 'customer' | 'correctedInvoiceNumber'>
+
 export type ReverseInvoiceOptions = Pick<InvoiceOptions, 'eInvoice' | 'issueDate' | 'completionDate' | 'downloadPDF'>
 
 export interface EmailDetails {

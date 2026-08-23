@@ -50,7 +50,7 @@ This is a TypeScript client library for the [szamlazz.hu](https://szamlazz.hu) H
 ### Client Methods
 
 - `generateInvoice(options, items)` - Creates an invoice, returns invoice number and optional PDF
-- `correctInvoice(invoiceNumber, options, items)` - Creates a correction invoice (helyesbítő számla) for an existing invoice; the original stays valid alongside the correction. The `items` are the correction deltas (typically the original items negated plus the corrected items). Equivalent to `generateInvoice` with `correctedInvoiceNumber` set.
+- `correctInvoice(invoiceNumber, options, items)` - Creates a correction invoice (helyesbítő számla) for an existing invoice; the original stays valid alongside the correction. The `items` are the correction deltas (typically the original items negated plus the corrected items). Equivalent to `generateInvoice` with `correctedInvoiceNumber` set, except `options` is a `CorrectionInvoiceOptions` (no `customer`): a correction can't change the partner, so the client sends an empty no-op customer block that szamlazz.hu requires only to be structurally present.
 - `reverseInvoice(invoiceNumber, options)` - Creates a reversal/storno invoice
 - `findInvoice(query, options?)` - Looks up an already-issued document by invoice number, order number or
   external id. Returns `null` when there is no such document instead of throwing, because szamlazz.hu

@@ -6,6 +6,7 @@ import type {
   QueriedInvoice,
   QueryOptions,
   ReverseInvoiceOptions,
+  CorrectionInvoiceOptions,
   KeyAuth,
   CredentialAuth,
   InvoiceItemResponse,
@@ -207,6 +208,11 @@ export class Client {
    * amounts, followed by the corrected line items. Partner details, payment
    * method and currency cannot be changed by a correction invoice.
    *
+   * Because a correction cannot change the partner, no `customer` is required:
+   * szamlazz.hu treats the customer block on a correction as a no-op and only
+   * needs it to be structurally present, so the client sends empty values for
+   * it automatically.
+   *
    * Each call produces a brand-new invoice with its own number — nothing is
    * edited in place — and that number is returned in the response.
    *
@@ -230,8 +236,21 @@ export class Client {
    * @param invoice The number of the ORIGINAL invoice being corrected — never a
    *   previous correction invoice.
    */
-  async correctInvoice(invoice: string, options: InvoiceOptions, items: Array<LineItem> = []) {
-    return this.generateInvoice({ ...options, correctedInvoiceNumber: invoice }, items)
+  async correctInvoice(
+    invoice: string,
+    options: CorrectionInvoiceOptions,
+    items: Array<LineItem> = [],
+  ) {
+    return this.generateInvoice(
+      {
+        ...options,
+        correctedInvoiceNumber: invoice,
+        // A correction cannot change the partner; szamlazz.hu only needs the
+        // customer block to be present, so we send an empty no-op one.
+        customer: { name: '', zip: '', city: '', address: '' },
+      },
+      items,
+    )
   }
 
   /**
