@@ -20,7 +20,7 @@ The suites are split by file name (`vitest.config.ts` defines them as vitest pro
   every push and pull request.
 - **live** — `src/**/*.live.test.ts`. Issues and reverses real documents on szamlazz.hu's demo account
   (`demo`/`demo` and a public Agent key), so it needs network access and takes about a minute. It runs in
-  `.github/workflows/live.yml` (after a merge to `main`, nightly, on demand) and before every publish.
+  `.github/workflows/live.yml`, which only runs when started by hand, and before every publish.
 
 The live suite is the source of truth: the response shapes this client decodes are undocumented in places,
 and the receipt docs turned out to be wrong in several (see `src/receipt.ts` and `src/errors.ts`). When

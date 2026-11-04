@@ -1,13 +1,8 @@
 name: Live API tests
 
-# Issues and reverses real documents on szamlazz.hu's demo account, so it stays
-# off the pull-request path: it runs after a merge, nightly (to notice when
-# szamlazz.hu changes under us), and on demand.
+# Issues and reverses real documents on szamlazz.hu's demo account, so it never
+# runs on its own: start it by hand from the Actions tab.
 on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: "17 3 * * *"
   workflow_dispatch:
 
 concurrency:

@@ -152,8 +152,8 @@ pnpm test:live  # live suite: issues and reverses real documents on szamlazz.hu'
 pnpm test:all   # both
 ```
 
-The unit suite runs on every push and pull request. The live suite runs after a merge to `main`, nightly,
-on demand, and before every publish. Live tests are the `*.live.test.ts` files; the receipt fixtures under
+The unit suite runs on every push and pull request. The live suite only runs when started by hand (the
+"Live API tests" workflow in GitHub Actions) and before every publish. Live tests are the `*.live.test.ts` files; the receipt fixtures under
 `test/fixtures/receipt/` are replies captured from the demo account.
 
 ### Error handling
