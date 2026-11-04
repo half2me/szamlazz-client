@@ -25,6 +25,12 @@ export default defineConfig({
           name: 'live',
           include: ['src/**/*.live.test.ts'],
           testTimeout: 30000,
+          // One request at a time: the demo account is shared and rate limited, and
+          // concurrent runs can trip over each other (e.g. "newest receipt for this
+          // order number"). Files run one after another, and tests inside a file are
+          // already sequential unless marked concurrent.
+          fileParallelism: false,
+          sequence: { concurrent: false },
         },
       },
     ],
