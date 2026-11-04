@@ -15,6 +15,7 @@ import { textOf } from './xml.js'
  * - https://docs.szamlazz.hu/agent/querying_xml/response (code 7)
  * - https://docs.szamlazz.hu/agent/generating_receipt/response (codes 336-340)
  * - https://docs.szamlazz.hu/agent/generating_receipt/settings_and_rules/item-amounts (codes 363-365)
+ * - Observed live on the demo account, undocumented (codes 43, 200)
  * - Számla Agent PDF documentation v3.6 (codes 49, 52, 56, 250, 335-340, 395, 396)
  */
 export enum SzamlazzErrorCode {
@@ -23,6 +24,12 @@ export enum SzamlazzErrorCode {
 
   /** Invalid login name, password or Agent key. */
   LoginFailed = 3,
+
+  /**
+   * Sending an email failed. Not in the documented list; seen live from sending a
+   * receipt to an address szamlazz.hu could not deliver to.
+   */
+  EmailSendFailed = 43,
 
   /**
    * Missing data. The message names what is missing. Also returned when a queried
@@ -73,6 +80,12 @@ export enum SzamlazzErrorCode {
   /** The user has access to more than one billing account. Use an Agent key instead. */
   MultipleAccountsNotAllowed = 164,
 
+  /**
+   * The prefix is already used by another billing account with the same tax number.
+   * Not in the documented list; seen live when creating a receipt.
+   */
+  PrefixUsedByAnotherAccount = 200,
+
   /** The invoice number prefix is empty or was not registered in the szamlazz.hu account. */
   InvalidInvoicePrefix = 202,
 
@@ -112,7 +125,11 @@ export enum SzamlazzErrorCode {
    */
   DuplicateReceiptCallId = 338,
 
-  /** No such receipt number. Documented for querying and sending a receipt. */
+  /**
+   * The receipt being looked up does not exist. Returned by a receipt query (by
+   * number, order number or call id). Sending or reversing an unknown receipt
+   * fails with {@link MissingData} instead.
+   */
   ReceiptNotFound = 339,
 
   /** The settled amount of the receipt differs from its gross total. */
@@ -171,6 +188,7 @@ export enum SzamlazzErrorCategory {
 const categories: Record<number, SzamlazzErrorCategory> = {
   [SzamlazzErrorCode.SystemMaintenance]: SzamlazzErrorCategory.Service,
   [SzamlazzErrorCode.LoginFailed]: SzamlazzErrorCategory.Authentication,
+  [SzamlazzErrorCode.EmailSendFailed]: SzamlazzErrorCategory.Service,
   [SzamlazzErrorCode.MissingData]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.KeystorePasswordRequired]: SzamlazzErrorCategory.Account,
   [SzamlazzErrorCode.UnparsableVatRate]: SzamlazzErrorCategory.Validation,
@@ -184,6 +202,7 @@ const categories: Record<number, SzamlazzErrorCategory> = {
   [SzamlazzErrorCode.SubscriptionProblem]: SzamlazzErrorCategory.Account,
   [SzamlazzErrorCode.DuplicateOrderNumberWithValue]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.MultipleAccountsNotAllowed]: SzamlazzErrorCategory.Authentication,
+  [SzamlazzErrorCode.PrefixUsedByAnotherAccount]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.InvalidInvoicePrefix]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.DelegationNotAccepted]: SzamlazzErrorCategory.Account,
   [SzamlazzErrorCode.ItemNetValueMismatch]: SzamlazzErrorCategory.Validation,

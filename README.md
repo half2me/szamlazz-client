@@ -67,7 +67,7 @@ const client = new SZClient({ key: 'your-agent-key' })
 
 const receipt = await client.createReceipt(
   {
-    prefix: 'NYGTA', // uppercase letters and digits, and not a prefix you use for invoices
+    prefix: 'NYGTA', // up to 5 uppercase letters and digits, not a prefix you use for invoices
     paymentMethod: PaymentMethod.Card,
     currency: 'HUF',
     comment: 'Monthly pass',
@@ -101,7 +101,7 @@ console.log(receipt.number, receipt.totals.gross) // 'NYGTA-2026-1', 10000
 const storno = await client.reverseReceipt(receipt.number, { callId: 'payment-5678-storno' })
 console.log(storno.number, storno.type) // 'NYGTA-2026-2', 'SN' — the reply describes the new storno receipt
 
-const found = await client.findReceipt({ receiptNumber: receipt.number }, { pdf: true }) // or { orderNumber }
+const found = await client.findReceipt({ receiptNumber: receipt.number }, { pdf: true }) // or { orderNumber } or { callId }
 console.log(found?.reversed) // true
 
 await client.sendReceipt(receipt.number, {
@@ -119,24 +119,42 @@ A few rules worth knowing:
   `grossAmount` exactly. szamlazz.hu rejects anything else with code 261, 363, 364 or 365.
 - **Use `callId` to make retries safe.** szamlazz.hu refuses a second receipt with a call id it has already
   seen, throwing `SzamlazzErrorCode.DuplicateReceiptCallId` (338) instead of issuing a duplicate. Take the id
-  from something stable, such as your payment id. On a 338, the receipt from the earlier attempt exists:
-  set an `orderNumber` too, so you can fetch it with `findReceipt({ orderNumber })`.
+  from something stable, such as your payment id. On a 338 the receipt from the earlier attempt exists, and
+  you can fetch it by the same call id:
 
   ```javascript
   try {
     return await client.createReceipt(options, items)
   } catch (e) {
     if (isSzamlazzError(e) && e.code === SzamlazzErrorCode.DuplicateReceiptCallId) {
-      return await client.findReceipt({ orderNumber: options.orderNumber })
+      return await client.findReceipt({ callId: options.callId })
     }
     throw e
   }
   ```
 
 - `findReceipt()` returns `null` for a receipt that does not exist (code 339), like `findInvoice()`.
-- A receipt that was already reversed, or is itself a storno receipt, cannot be reversed. szamlazz.hu reports
-  these with a message rather than a dedicated code.
-- Receipts also accept the `ÁKK` VAT code and `Ft` as a currency.
+- `reverseReceipt()` fails with code 7 (`MissingData`) for a receipt that does not exist, was already
+  reversed, or is itself a storno receipt; only the message tells them apart. `sendReceipt()` also reports
+  an unknown receipt as code 7, not 339.
+- After a reversal both receipts read `reversed: true`: check `type` (`NY` or `SN`) to tell the original
+  from its storno. Only the storno names the other one, in `reversedReceiptNumber`.
+- `sendReceipt()` with no email details resends the previous notification, which fails with code 7 for a
+  receipt that was never emailed. Pass at least `to`.
+- A foreign-currency receipt without `exchangeRate` gets the day's MNB rate from szamlazz.hu.
+- Receipts also accept the `ÁKK` VAT code, a 10% rate, and `Ft` as a currency.
+
+### Tests
+
+```bash
+pnpm test       # unit suite: fixtures and pure logic, no network, about a second
+pnpm test:live  # live suite: issues and reverses real documents on szamlazz.hu's demo account
+pnpm test:all   # both
+```
+
+The unit suite runs on every push and pull request. The live suite runs after a merge to `main`, nightly,
+on demand, and before every publish. Live tests are the `*.live.test.ts` files; the receipt fixtures under
+`test/fixtures/receipt/` are replies captured from the demo account.
 
 ### Error handling
 

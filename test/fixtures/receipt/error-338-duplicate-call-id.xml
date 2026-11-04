@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xmlnyugtavalasz xmlns="http://www.szamlazz.hu/xmlnyugtavalasz" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.szamlazz.hu/xmlnyugtavalasz https://www.szamlazz.hu/szamla/docs/xsds/nyugtavalasz/xmlnyugtavalasz.xsd">
+<sikeres>false</sikeres>
+<hibakod>338</hibakod>
+<hibauzenet><![CDATA[A nyugta létrehozásához használt hívásazonosító már létezik a rendszerben.]]></hibauzenet>
+</xmlnyugtavalasz>

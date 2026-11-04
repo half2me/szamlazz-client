@@ -47,8 +47,9 @@ const decodeItem = (node: any): ReceiptItem => ({
   amountName: textOf(node?.mennyisegiEgyseg) ?? '',
   netUnitPrice: numberOf(node?.nettoEgysegar),
   ...decodeVat(node),
-  // The schema names these netto/afa/brutto, but the documented sample reply
-  // also shows the invoice names nettoErtek/afaErtek/bruttoErtek, so take either.
+  // szamlazz.hu sends netto/afa/brutto, as the schema says. The docs' sample
+  // reply also shows the invoice names nettoErtek/afaErtek/bruttoErtek, so
+  // those are read as a fallback.
   netAmount: numberOf(node?.netto ?? node?.nettoErtek),
   taxAmount: numberOf(node?.afa ?? node?.afaErtek),
   grossAmount: numberOf(node?.brutto ?? node?.bruttoErtek),

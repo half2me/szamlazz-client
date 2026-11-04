@@ -31,7 +31,7 @@ interface AgentResponse {
 }
 
 const INVOICE_QUERY_IDENTIFIERS = ['invoiceNumber', 'orderNumber', 'externalId'] as const
-const RECEIPT_QUERY_IDENTIFIERS = ['receiptNumber', 'orderNumber'] as const
+const RECEIPT_QUERY_IDENTIFIERS = ['receiptNumber', 'orderNumber', 'callId'] as const
 
 /**
  * Rejects a lookup that names no document, or more than one.
@@ -395,8 +395,8 @@ export class Client {
    * Set {@link ReceiptOptions.callId} to make this safe to retry: szamlazz.hu
    * refuses a second receipt with a call id it has already seen, throwing
    * {@link SzamlazzErrorCode.DuplicateReceiptCallId} (338) rather than issuing a
-   * duplicate. On that error the receipt from the earlier attempt exists — look
-   * it up with {@link findReceipt}, by the `orderNumber` if you set one.
+   * duplicate. On that error the receipt from the earlier attempt exists — fetch
+   * it with `findReceipt({ callId })`.
    *
    * HUF amounts are checked strictly: see {@link ReceiptLineItem}.
    *
@@ -460,8 +460,9 @@ export class Client {
    *
    * @returns the new storno receipt ({@link ReceiptType.Reversal}), not the reversed one.
    * @throws {SzamlazzError} when the receipt does not exist, was already reversed, or is
-   *   itself a storno receipt. szamlazz.hu documents those three cases by message only,
-   *   not by code, so do not rely on {@link SzamlazzError.code} to tell them apart.
+   *   itself a storno receipt. szamlazz.hu reports all three as {@link SzamlazzErrorCode.MissingData}
+   *   (7) and tells them apart only in the message, so a missing receipt is not
+   *   {@link SzamlazzErrorCode.ReceiptNotFound} here.
    */
   async reverseReceipt(receiptNumber: string, options: ReverseReceiptOptions = {}): Promise<Receipt> {
     assertReceiptNumber('reverseReceipt', receiptNumber)
@@ -485,7 +486,7 @@ export class Client {
   }
 
   /**
-   * Looks up an issued receipt by its number or by the order number it was created with.
+   * Looks up an issued receipt by its number, or by the order number or call id it was created with.
    *
    * **Returns `null` when no such receipt exists** — szamlazz.hu reports that with
    * {@link SzamlazzErrorCode.ReceiptNotFound} (339) — instead of throwing, like
@@ -507,6 +508,7 @@ export class Client {
         fejlec: {
           nyugtaszam: query.receiptNumber,
           rendelesSzam: query.orderNumber,
+          hivasAzonosito: query.callId,
           pdfSablon: options.template,
         },
       },
@@ -523,11 +525,13 @@ export class Client {
   /**
    * Emails an already issued receipt.
    *
-   * Fields left out of `email` fall back to what szamlazz.hu would use by default
-   * (the address and texts from the account settings).
+   * With no `email` details, szamlazz.hu resends the receipt's previous
+   * notification — and fails with {@link SzamlazzErrorCode.MissingData} (7) if
+   * there was none, which is the case for any receipt not yet emailed.
    *
-   * @throws {SzamlazzError} when szamlazz.hu did not send it — {@link SzamlazzErrorCode.ReceiptNotFound}
-   *   for an unknown receipt number.
+   * @throws {SzamlazzError} when szamlazz.hu did not send it: {@link SzamlazzErrorCode.MissingData}
+   *   (7) for an unknown receipt number — not {@link SzamlazzErrorCode.ReceiptNotFound} —
+   *   and {@link SzamlazzErrorCode.EmailSendFailed} (43) when delivery failed.
    */
   async sendReceipt(receiptNumber: string, email: ReceiptEmail = {}): Promise<void> {
     assertReceiptNumber('sendReceipt', receiptNumber)

@@ -6,7 +6,10 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w",
-    "test": "vitest run"
+    "test": "vitest run --project unit",
+    "test:live": "vitest run --project live",
+    "test:all": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "repository": {
     "type": "git",

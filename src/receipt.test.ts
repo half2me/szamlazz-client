@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { convert } from 'xmlbuilder2'
 import {
@@ -13,120 +14,65 @@ import {
 import type { ReceiptLineItem, ReceiptOptions } from './types.js'
 
 /*
- * Unlike index.test.ts these tests never reach szamlazz.hu: `fetch` is stubbed
- * and answers with fixtures shaped after the samples in the receipt docs
- * (https://docs.szamlazz.hu/agent/category/generating-a-receipt and siblings).
- * That checks the requests this client builds and how it reads the documented
- * replies — not that szamlazz.hu still answers the way its docs say.
+ * Fast receipt tests: `fetch` is stubbed, so nothing reaches szamlazz.hu.
+ *
+ * The replies are real ones, captured from the demo account into
+ * test/fixtures/receipt/. Two shapes could not be captured there — a successful
+ * send (the demo account cannot deliver mail) and a reply carrying a PDF, which
+ * is too large to keep — so those are built from the docs' samples instead.
+ * src/receipt.live.test.ts runs the same flows against the real API.
  */
+
+const fixture = (name: string) => readFileSync(new URL(`../test/fixtures/receipt/${name}`, import.meta.url), 'utf8')
+
+const CREATED = 'SZCT-2026-15'
+const STORNO = 'SZCT-2026-16'
 
 const PDF_BYTES = Buffer.from('%PDF-1.4 receipt')
 
-const receiptReply = ({
-  number = 'NYGTA-2026-1',
-  type = 'NY',
-  reversed = false,
-  reversedNumber = '',
-  callId = 'pay-123',
-  pdf = false,
-} = {}) => `<?xml version="1.0" encoding="UTF-8"?>
-<xmlnyugtavalasz xmlns="http://www.szamlazz.hu/xmlnyugtavalasz" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.szamlazz.hu/xmlnyugtavalasz https://www.szamlazz.hu/szamla/docs/xsds/nyugtavalasz/xmlnyugtavalasz.xsd">
+/** The docs' sample reply, with a PDF; it spells line amounts the invoice way (`nettoErtek`, ...). */
+const docsSampleWithPdf = `<?xml version="1.0" encoding="UTF-8"?>
+<xmlnyugtavalasz xmlns="http://www.szamlazz.hu/xmlnyugtavalasz">
   <sikeres>true</sikeres>
-  <hibakod></hibakod>
-  <hibauzenet></hibauzenet>
-  ${pdf ? `<nyugtaPdf>${PDF_BYTES.toString('base64')}</nyugtaPdf>` : ''}
+  <nyugtaPdf>${PDF_BYTES.toString('base64')}</nyugtaPdf>
   <nyugta>
     <alap>
       <id>123456</id>
-      <hivasAzonosito>${callId}</hivasAzonosito>
-      <nyugtaszam>${number}</nyugtaszam>
-      <tipus>${type}</tipus>
-      <stornozott>${reversed}</stornozott>
-      <stornozottNyugtaszam>${reversedNumber}</stornozottNyugtaszam>
-      <kelt>2026-11-04</kelt>
-      <fizmod>bankkártya</fizmod>
-      <penznem>HUF</penznem>
-      <devizabank></devizabank>
-      <devizaarf>0.0</devizaarf>
-      <megjegyzes>Bérlet</megjegyzes>
-      <fokonyvVevo></fokonyvVevo>
-      <teszt>true</teszt>
-      <rendelesSzam>order-1</rendelesSzam>
+      <nyugtaszam>NYGT-2017-123</nyugtaszam>
+      <tipus>NY</tipus>
+      <stornozott>false</stornozott>
+      <kelt>2015-12-01</kelt>
+      <fizmod>cash</fizmod>
+      <penznem>EUR</penznem>
+      <devizabank>MNB</devizabank>
+      <devizaarf>210</devizaarf>
+      <teszt>false</teszt>
     </alap>
     <tetelek>
       <tetel>
-        <azonosito>sku-1</azonosito>
-        <megnevezes>Monthly pass</megnevezes>
-        <mennyiseg>1.0</mennyiseg>
-        <mennyisegiEgyseg>db</mennyisegiEgyseg>
-        <nettoEgysegar>787.4</nettoEgysegar>
-        <netto>787.4</netto>
-        <afakulcs>27</afakulcs>
-        <afa>212.6</afa>
-        <brutto>1000.0</brutto>
-        <fokonyv>
-          <arbevetel>911</arbevetel>
-          <afa>467</afa>
-        </fokonyv>
-      </tetel>
-      <tetel>
-        <megnevezes>Locker</megnevezes>
+        <megnevezes>Puppy doormat</megnevezes>
         <mennyiseg>2.0</mennyiseg>
         <mennyisegiEgyseg>db</mennyisegiEgyseg>
-        <nettoEgysegar>500</nettoEgysegar>
-        <nettoErtek>1000.0</nettoErtek>
-        <afatipus>AAM</afatipus>
-        <afakulcs>0</afakulcs>
-        <afaErtek>0.0</afaErtek>
-        <bruttoErtek>1000.0</bruttoErtek>
+        <nettoEgysegar>10000</nettoEgysegar>
+        <nettoErtek>20000.0</nettoErtek>
+        <afakulcs>27</afakulcs>
+        <afaErtek>5400.0</afaErtek>
+        <bruttoErtek>25400.0</bruttoErtek>
       </tetel>
     </tetelek>
-    <kifizetesek>
-      <kifizetes>
-        <fizetoeszkoz>SZÉP kártya</fizetoeszkoz>
-        <osszeg>1500.0</osszeg>
-        <leiras>OTP SZÉP kártya</leiras>
-      </kifizetes>
-      <kifizetes>
-        <fizetoeszkoz>bankkártya</fizetoeszkoz>
-        <osszeg>500.0</osszeg>
-      </kifizetes>
-    </kifizetesek>
     <osszegek>
-      <afakulcsossz>
-        <afakulcs>27</afakulcs>
-        <netto>787.4</netto>
-        <afa>212.6</afa>
-        <brutto>1000</brutto>
-      </afakulcsossz>
-      <afakulcsossz>
-        <afatipus>AAM</afatipus>
-        <afakulcs>0</afakulcs>
-        <netto>1000</netto>
-        <afa>0</afa>
-        <brutto>1000</brutto>
-      </afakulcsossz>
-      <totalossz>
-        <netto>1787.4</netto>
-        <afa>212.6</afa>
-        <brutto>2000</brutto>
-      </totalossz>
+      <afakulcsossz><afakulcs>27</afakulcs><netto>20000</netto><afa>5400</afa><brutto>25400</brutto></afakulcsossz>
+      <totalossz><netto>20000</netto><afa>5400</afa><brutto>25400</brutto></totalossz>
     </osszegek>
   </nyugta>
 </xmlnyugtavalasz>`
 
-const receiptError = (code: number, message: string) => `<?xml version="1.0" encoding="UTF-8"?>
-<xmlnyugtavalasz xmlns="http://www.szamlazz.hu/xmlnyugtavalasz" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <sikeres>false</sikeres>
-  <hibakod>${code}</hibakod>
-  <hibauzenet>${message}</hibauzenet>
-</xmlnyugtavalasz>`
-
-const sendReply = (ok: boolean, code = '', message = '') => `<?xml version="1.0" encoding="UTF-8"?>
-<xmlnyugtasendvalasz xmlns="http://www.szamlazz.hu/xmlnyugtasendvalasz" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <sikeres>${ok}</sikeres>
-  <hibakod>${code}</hibakod>
-  <hibauzenet>${message}</hibauzenet>
+/** The docs' sample of a successful send. */
+const docsSendSuccess = `<?xml version="1.0" encoding="UTF-8"?>
+<xmlnyugtasendvalasz xmlns="http://www.szamlazz.hu/xmlnyugtasendvalasz">
+  <sikeres>true</sikeres>
+  <hibakod></hibakod>
+  <hibauzenet></hibauzenet>
 </xmlnyugtasendvalasz>`
 
 interface SentRequest {
@@ -147,8 +93,7 @@ beforeEach(() => {
     const form = init!.body as FormData
     const fields = [...form.keys()]
     expect(fields).toHaveLength(1)
-    const file = form.get(fields[0]) as Blob
-    const xml = await file.text()
+    const xml = await (form.get(fields[0]) as Blob).text()
     sent.push({ url: String(input), field: fields[0], xml, doc: convert(xml, { format: 'object' }) })
 
     const body = replies.shift()
@@ -168,7 +113,7 @@ const keyClient = new Client({ key: 'agent-key' })
 const credentialClient = new Client({ username: 'demo', password: 'demo' })
 
 const options: ReceiptOptions = {
-  prefix: 'NYGTA',
+  prefix: 'SZCT',
   paymentMethod: PaymentMethod.Card,
   currency: 'HUF',
   comment: 'Bérlet',
@@ -203,7 +148,7 @@ const items: ReceiptLineItem[] = [
 
 describe('createReceipt', () => {
   it('posts an xmlnyugtacreate document in the nyugta_create field', async () => {
-    replies.push(receiptReply())
+    replies.push(fixture('create.xml'))
     await keyClient.createReceipt(
       {
         ...options,
@@ -232,7 +177,7 @@ describe('createReceipt', () => {
     // Same order as the documented sample; fields left unset are not sent at all.
     expect(root.fejlec).toEqual({
       hivasAzonosito: 'pay-123',
-      elotag: 'NYGTA',
+      elotag: 'SZCT',
       fizmod: 'bankkártya',
       penznem: 'HUF',
       megjegyzes: 'Bérlet',
@@ -284,7 +229,7 @@ describe('createReceipt', () => {
   })
 
   it('sends credentials, the exchange rate and the PDF flag when given', async () => {
-    replies.push(receiptReply())
+    replies.push(fixture('create.xml'))
     await credentialClient.createReceipt(
       { ...options, currency: 'EUR', exchangeRate: 395.12, exchangeBank: 'MNB', downloadPDF: true },
       [{ ...items[0], comment: 'November', dataErasureCodes: 1 }],
@@ -299,13 +244,13 @@ describe('createReceipt', () => {
   })
 
   it('decodes the receipt number, totals, lines and payments', async () => {
-    replies.push(receiptReply())
+    replies.push(fixture('create.xml'))
     const receipt = await keyClient.createReceipt(options, items)
 
     expect(receipt).toMatchObject({
-      id: '123456',
-      callId: 'pay-123',
-      number: 'NYGTA-2026-1',
+      id: '90476166',
+      callId: 'pay-1793796523970',
+      number: CREATED,
       type: ReceiptType.Receipt,
       reversed: false,
       issueDate: '2026-11-04',
@@ -314,7 +259,7 @@ describe('createReceipt', () => {
       exchangeRate: 0,
       comment: 'Bérlet',
       test: true,
-      orderNumber: 'order-1',
+      orderNumber: 'order-1793796523970',
       totals: { net: 1787.4, tax: 212.6, gross: 2000 },
     })
     expect(receipt.reversedReceiptNumber).toBeUndefined()
@@ -336,8 +281,7 @@ describe('createReceipt', () => {
         ledger: { revenue: '911', vat: '467' },
       },
       {
-        // The docs' sample reply spells this line's amounts the invoice way
-        // (nettoErtek, ...); they must be read all the same.
+        // A named rate comes back as 0% with the code in <afatipus>.
         id: undefined,
         name: 'Locker',
         amount: 2,
@@ -361,51 +305,49 @@ describe('createReceipt', () => {
     ])
   })
 
-  it('returns the PDF when it was requested', async () => {
-    replies.push(receiptReply({ pdf: true }))
+  it('decodes the docs-sample shape: a PDF, a foreign currency and invoice-style amount names', async () => {
+    replies.push(docsSampleWithPdf)
     const receipt = await keyClient.createReceipt({ ...options, downloadPDF: true }, items)
+
     expect(receipt.pdf).toEqual(PDF_BYTES)
+    expect(receipt).toMatchObject({ currency: 'EUR', exchangeBank: 'MNB', exchangeRate: 210 })
+    expect(receipt.items[0]).toMatchObject({ netAmount: 20000, taxAmount: 5400, grossAmount: 25400 })
   })
 
   it('throws a typed error when the call id was already used', async () => {
-    replies.push(receiptError(338, 'A hívásazonosító már létezik: pay-123'))
+    replies.push(fixture('error-338-duplicate-call-id.xml'))
 
     const error = await keyClient.createReceipt(options, items).catch((e) => e)
 
     expect(error).toBeInstanceOf(SzamlazzError)
     expect(error.code).toBe(SzamlazzErrorCode.DuplicateReceiptCallId)
     expect(error.category).toBe(SzamlazzErrorCategory.Validation)
-    expect(error.message).toContain('pay-123')
+    expect(error.message).toContain('hívásazonosító')
   })
 
   it.each([
-    { code: 336, expected: SzamlazzErrorCode.ReceiptPrefixUsedByInvoices },
-    { code: 337, expected: SzamlazzErrorCode.InvalidPrefixFormat },
-    { code: 340, expected: SzamlazzErrorCode.ReceiptPaymentMismatch },
-    { code: 261, expected: SzamlazzErrorCode.ItemGrossValueMismatch },
-    { code: 363, expected: SzamlazzErrorCode.ReceiptGrossNotWhole },
-    { code: 364, expected: SzamlazzErrorCode.ReceiptNetTooPrecise },
-    { code: 365, expected: SzamlazzErrorCode.ReceiptVatTooPrecise },
-  ])('maps receipt error $code to a validation error', async ({ code, expected }) => {
-    replies.push(receiptError(code, 'hiba'))
+    { name: 'error-336-prefix-used-by-invoices.xml', code: SzamlazzErrorCode.ReceiptPrefixUsedByInvoices },
+    { name: 'error-363-gross-not-whole.xml', code: SzamlazzErrorCode.ReceiptGrossNotWhole },
+  ])('maps $name to a validation error', async ({ name, code }) => {
+    replies.push(fixture(name))
 
     await expect(keyClient.createReceipt(options, items)).rejects.toMatchObject({
       name: 'SzamlazzError',
-      code: expected,
+      code,
       category: SzamlazzErrorCategory.Validation,
     })
   })
 
   it('throws the raw body when a success reply carries no receipt', async () => {
-    replies.push(sendReply(true))
+    replies.push(docsSendSuccess)
     await expect(keyClient.createReceipt(options, items)).rejects.toThrow('xmlnyugtasendvalasz')
   })
 })
 
 describe('reverseReceipt', () => {
   it('posts an xmlnyugtast document in the nyugta_storno field', async () => {
-    replies.push(receiptReply({ number: 'NYGTA-2026-2', type: 'SN', reversedNumber: 'NYGTA-2026-1' }))
-    await credentialClient.reverseReceipt('NYGTA-2026-1', {
+    replies.push(fixture('reverse.xml'))
+    await credentialClient.reverseReceipt(CREATED, {
       callId: 'storno-pay-123',
       downloadPDF: true,
       template: ReceiptTemplate.Narrow80mm,
@@ -422,25 +364,21 @@ describe('reverseReceipt', () => {
     // This schema is an xs:sequence, so the order is checked too.
     expect(elementsOf(root.beallitasok)).toEqual(['felhasznalo', 'jelszo', 'pdfLetoltes'])
     expect(root.beallitasok.pdfLetoltes).toBe('true')
-    expect(root.fejlec).toEqual({ nyugtaszam: 'NYGTA-2026-1', pdfSablon: 'N', hivasAzonosito: 'storno-pay-123' })
+    expect(root.fejlec).toEqual({ nyugtaszam: CREATED, pdfSablon: 'N', hivasAzonosito: 'storno-pay-123' })
     expect(elementsOf(root.fejlec)).toEqual(['nyugtaszam', 'pdfSablon', 'hivasAzonosito'])
   })
 
   it('sends only the receipt number by default', async () => {
-    replies.push(receiptReply({ type: 'SN' }))
-    await keyClient.reverseReceipt('NYGTA-2026-1')
+    replies.push(fixture('reverse.xml'))
+    await keyClient.reverseReceipt(CREATED)
 
     const root = sent[0].doc.xmlnyugtast
     expect(root.beallitasok).toEqual({ szamlaagentkulcs: 'agent-key', pdfLetoltes: 'false' })
-    expect(root.fejlec).toEqual({ nyugtaszam: 'NYGTA-2026-1' })
+    expect(root.fejlec).toEqual({ nyugtaszam: CREATED })
   })
 
   it('runs the reversal flow: create, reverse, then see the original as reversed', async () => {
-    replies.push(
-      receiptReply({ number: 'NYGTA-2026-1' }),
-      receiptReply({ number: 'NYGTA-2026-2', type: 'SN', reversedNumber: 'NYGTA-2026-1', callId: 'storno-1' }),
-      receiptReply({ number: 'NYGTA-2026-1', reversed: true, reversedNumber: 'NYGTA-2026-2' }),
-    )
+    replies.push(fixture('create.xml'), fixture('reverse.xml'), fixture('query-reversed.xml'))
 
     const original = await keyClient.createReceipt(options, items)
     const storno = await keyClient.reverseReceipt(original.number, { callId: 'storno-1' })
@@ -451,26 +389,33 @@ describe('reverseReceipt', () => {
       'action-szamla_agent_nyugta_storno',
       'action-szamla_agent_nyugta_get',
     ])
-    expect(sent[1].doc.xmlnyugtast.fejlec.nyugtaszam).toBe('NYGTA-2026-1')
+    expect(sent[1].doc.xmlnyugtast.fejlec.nyugtaszam).toBe(CREATED)
 
-    // The reply describes the new storno receipt, not the reversed one.
-    expect(storno.number).toBe('NYGTA-2026-2')
-    expect(storno.type).toBe(ReceiptType.Reversal)
-    expect(storno.reversedReceiptNumber).toBe('NYGTA-2026-1')
-    expect(storno.callId).toBe('storno-1')
+    // The reply describes the new storno receipt, not the reversed one. szamlazz.hu
+    // marks the storno itself as `stornozott` too, so `type` is what tells them apart.
+    expect(storno).toMatchObject({
+      number: STORNO,
+      type: ReceiptType.Reversal,
+      reversed: true,
+      reversedReceiptNumber: CREATED,
+      totals: { net: -1787.4, tax: -212.6, gross: -2000 },
+    })
+    expect(storno.items.map((i) => i.amount)).toEqual([-1, -2])
+    expect(storno.payments.map((p) => p.amount)).toEqual([-1500, -500])
 
-    expect(after!.type).toBe(ReceiptType.Receipt)
-    expect(after!.reversed).toBe(true)
+    // The original is now reversed, but does not name its storno receipt.
+    expect(after).toMatchObject({ number: CREATED, type: ReceiptType.Receipt, reversed: true })
+    expect(after!.reversedReceiptNumber).toBeUndefined()
   })
 
-  it('throws when the receipt was already reversed', async () => {
-    replies.push(receiptError(7, 'Hiányzó adat: sztornózandó nyugta (ez a nyugta már sztornózva van: NYGTA-2026-1)'))
+  it('throws MissingData when the receipt was already reversed', async () => {
+    replies.push(fixture('error-7-already-reversed.xml'))
 
-    const error = await keyClient.reverseReceipt('NYGTA-2026-1').catch((e) => e)
+    const error = await keyClient.reverseReceipt(CREATED).catch((e) => e)
 
     expect(error).toBeInstanceOf(SzamlazzError)
     expect(error.code).toBe(SzamlazzErrorCode.MissingData)
-    expect(error.message).toContain('már sztornózva')
+    expect(error.message).toContain('már sztornózták')
   })
 
   it('rejects an empty receipt number without sending anything', async () => {
@@ -481,9 +426,9 @@ describe('reverseReceipt', () => {
 
 describe('findReceipt', () => {
   it('posts an xmlnyugtaget document in the nyugta_get field', async () => {
-    replies.push(receiptReply({ pdf: true }))
+    replies.push(docsSampleWithPdf)
     const receipt = await keyClient.findReceipt(
-      { receiptNumber: 'NYGTA-2026-1' },
+      { receiptNumber: CREATED },
       { pdf: true, template: ReceiptTemplate.Default },
     )
 
@@ -496,39 +441,38 @@ describe('findReceipt', () => {
       'http://www.szamlazz.hu/xmlnyugtaget https://www.szamlazz.hu/szamla/docs/xsds/nyugtaget/xmlnyugtaget.xsd',
     )
     expect(root.beallitasok).toEqual({ szamlaagentkulcs: 'agent-key', pdfLetoltes: 'true' })
-    expect(root.fejlec).toEqual({ nyugtaszam: 'NYGTA-2026-1', pdfSablon: 'A' })
-
-    expect(receipt!.number).toBe('NYGTA-2026-1')
-    expect(receipt!.totals.gross).toBe(2000)
+    expect(root.fejlec).toEqual({ nyugtaszam: CREATED, pdfSablon: 'A' })
     expect(receipt!.pdf).toEqual(PDF_BYTES)
   })
 
-  it('looks a receipt up by order number', async () => {
-    replies.push(receiptReply())
-    const receipt = await keyClient.findReceipt({ orderNumber: 'order-1' })
+  it.each([
+    { query: { orderNumber: 'order-1' }, fejlec: { rendelesSzam: 'order-1' } },
+    { query: { callId: 'pay-123' }, fejlec: { hivasAzonosito: 'pay-123' } },
+  ])('looks a receipt up by $fejlec', async ({ query, fejlec }) => {
+    replies.push(fixture('create.xml'))
+    const receipt = await keyClient.findReceipt(query)
 
-    expect(sent[0].doc.xmlnyugtaget.fejlec).toEqual({ rendelesSzam: 'order-1' })
+    expect(sent[0].doc.xmlnyugtaget.fejlec).toEqual(fejlec)
     expect(sent[0].doc.xmlnyugtaget.beallitasok.pdfLetoltes).toBe('false')
-    expect(receipt!.orderNumber).toBe('order-1')
+    expect(receipt!.number).toBe(CREATED)
   })
 
-  it('returns null for a receipt number that does not exist', async () => {
-    replies.push(receiptError(339, 'Nem létező nyugtaszám.'))
+  it('returns null for a receipt that does not exist', async () => {
+    replies.push(fixture('error-339-not-found.xml'))
     expect(await keyClient.findReceipt({ receiptNumber: 'NEMLETEZIK' })).toBeNull()
   })
 
   it('throws every other error', async () => {
-    replies.push(receiptError(3, 'Sikertelen bejelentkezés.'))
-    await expect(keyClient.findReceipt({ receiptNumber: 'NYGTA-2026-1' })).rejects.toMatchObject({
-      code: SzamlazzErrorCode.LoginFailed,
-      category: SzamlazzErrorCategory.Authentication,
+    replies.push(fixture('error-7-already-reversed.xml'))
+    await expect(keyClient.findReceipt({ receiptNumber: CREATED })).rejects.toMatchObject({
+      code: SzamlazzErrorCode.MissingData,
     })
   })
 
   it.each([
     { name: 'no identifier', query: {} },
-    { name: 'two identifiers', query: { receiptNumber: 'NYGTA-2026-1', orderNumber: 'order-1' } },
-    { name: 'an empty identifier', query: { receiptNumber: '' } },
+    { name: 'two identifiers', query: { receiptNumber: CREATED, orderNumber: 'order-1' } },
+    { name: 'an empty identifier', query: { callId: '' } },
   ])('rejects a lookup with $name without sending anything', async ({ query }) => {
     await expect(keyClient.findReceipt(query as never)).rejects.toBeInstanceOf(TypeError)
     expect(sent).toHaveLength(0)
@@ -537,8 +481,8 @@ describe('findReceipt', () => {
 
 describe('sendReceipt', () => {
   it('posts an xmlnyugtasend document in the nyugta_send field', async () => {
-    replies.push(sendReply(true))
-    await credentialClient.sendReceipt('NYGTA-2026-1', {
+    replies.push(docsSendSuccess)
+    await credentialClient.sendReceipt(CREATED, {
       to: 'customer@example.com',
       replyTo: 'club@example.com',
       subject: 'Nyugta',
@@ -555,7 +499,7 @@ describe('sendReceipt', () => {
     )
     expect(elementsOf(root)).toEqual(['beallitasok', 'fejlec', 'emailKuldes'])
     expect(root.beallitasok).toEqual({ felhasznalo: 'demo', jelszo: 'demo' })
-    expect(root.fejlec).toEqual({ nyugtaszam: 'NYGTA-2026-1' })
+    expect(root.fejlec).toEqual({ nyugtaszam: CREATED })
     expect(root.emailKuldes).toEqual({
       email: 'customer@example.com',
       emailReplyto: 'club@example.com',
@@ -565,29 +509,29 @@ describe('sendReceipt', () => {
     expect(elementsOf(root.emailKuldes)).toEqual(['email', 'emailReplyto', 'emailTargy', 'emailSzoveg'])
   })
 
-  it('still asks for the email to be sent when no details are given', async () => {
-    replies.push(sendReply(true))
-    await expect(keyClient.sendReceipt('NYGTA-2026-1')).resolves.toBeUndefined()
+  it('asks for the previous notification to be resent when no details are given', async () => {
+    replies.push(docsSendSuccess)
+    await expect(keyClient.sendReceipt(CREATED)).resolves.toBeUndefined()
     // The schema reads a missing <emailKuldes> as "send nothing", so it is always included.
     expect(sent[0].xml).toContain('<emailKuldes/>')
   })
 
-  it('throws the documented failure reply as a typed error', async () => {
-    replies.push(sendReply(false, '7', 'Hiányzó adat: emailtargy elem.'))
+  it('throws MissingData, not ReceiptNotFound, for an unknown receipt number', async () => {
+    replies.push(fixture('error-7-send-not-found.xml'))
 
-    await expect(keyClient.sendReceipt('NYGTA-2026-1', { to: 'customer@example.com' })).rejects.toMatchObject({
+    await expect(keyClient.sendReceipt('NEMLETEZIK', { to: 'customer@example.com' })).rejects.toMatchObject({
       name: 'SzamlazzError',
       code: SzamlazzErrorCode.MissingData,
-      message: 'Hiányzó adat: emailtargy elem.',
+      message: 'Hiányzó adat: küldendő nyugta (nincs ilyen nyugtaszám).',
     })
   })
 
-  it('throws ReceiptNotFound for an unknown receipt number', async () => {
-    replies.push(sendReply(false, '339', 'Nem létező nyugtaszám.'))
+  it('throws EmailSendFailed when szamlazz.hu could not deliver it', async () => {
+    replies.push(fixture('error-43-send-failed.xml'))
 
-    await expect(keyClient.sendReceipt('NEMLETEZIK')).rejects.toMatchObject({
-      code: SzamlazzErrorCode.ReceiptNotFound,
-      category: SzamlazzErrorCategory.NotFound,
+    await expect(keyClient.sendReceipt(CREATED, { to: 'customer@example.com' })).rejects.toMatchObject({
+      code: SzamlazzErrorCode.EmailSendFailed,
+      category: SzamlazzErrorCategory.Service,
     })
   })
 })
