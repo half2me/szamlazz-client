@@ -1,0 +1,23 @@
+name: Live API tests
+
+# Issues and reverses real documents on szamlazz.hu's demo account, so it never
+# runs on its own: start it by hand from the Actions tab.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: live-api
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:live

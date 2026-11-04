@@ -7,13 +7,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 pnpm build      # Compile TypeScript to dist/
 pnpm dev        # Watch mode compilation
-pnpm test       # Vitest, against the live szamlazz.hu demo account
+pnpm typecheck  # tsc --noEmit
+pnpm test       # Unit suite: no network, about a second
+pnpm test:live  # Live suite, against the szamlazz.hu demo account
+pnpm test:all   # Both
 ```
 
-`pnpm test` is an integration suite: it issues and reverses real documents on szamlazz.hu's demo
-account (`demo`/`demo` and a public Agent key), so it needs network access and takes about a minute.
-CI runs it on every push. There are no mocks — the response shapes this client decodes are
-undocumented in places, so a fixture would only ever assert what we already believed.
+The suites are split by file name (`vitest.config.ts` defines them as vitest projects):
+
+- **unit** — `src/**/*.test.ts` except live ones. No network: pure logic, plus receipt tests that stub
+  `fetch` and answer with replies captured from the demo account (`test/fixtures/receipt/`). CI runs it on
+  every push and pull request.
+- **live** — `src/**/*.live.test.ts`. Issues and reverses real documents on szamlazz.hu's demo account
+  (`demo`/`demo` and a public Agent key), so it needs network access and takes about a minute. It runs in
+  `.github/workflows/live.yml`, which only runs when started by hand, and before every publish.
+
+The live suite is the source of truth: the response shapes this client decodes are undocumented in places,
+and the receipt docs turned out to be wrong in several (see `src/receipt.ts` and `src/errors.ts`). When
+behaviour is unclear, probe the demo account rather than trusting the docs, and refresh a fixture by
+capturing the real reply. Receipts need a prefix of at most 5 characters that no other demo user's account
+has taken; the live suite uses `SZCT`, overridable with `SZAMLAZZ_RECEIPT_PREFIX`.
 
 ## Architecture
 
@@ -38,6 +51,10 @@ This is a TypeScript client library for the [szamlazz.hu](https://szamlazz.hu) H
     does not go through `Client.decodeResponse`
   - The reply omits `vevoifiokurl`, so a queried invoice has no URL — only `generateInvoice` gets one
 
+- **src/receipt.ts** - Decoders for the receipt (nyugta) replies
+  - Create, storno and query all answer with the same `<xmlnyugtavalasz>` document; send answers with a
+    bare `<xmlnyugtasendvalasz>`. Each receipt operation has its own request root, namespace and XSD
+
 - **src/xml.ts** - Readers for the object form `xmlbuilder2` produces (`textOf`, `numberOf`, `listOf`, ...)
   - Absorbs the shapes a text node can take: bare string, `{ $: ... }` for CDATA, `{}` when empty, and a
     single object rather than an array when an element occurs once
@@ -58,6 +75,11 @@ This is a TypeScript client library for the [szamlazz.hu](https://szamlazz.hu) H
   tell apart. A queried document carries no URL (see `src/query.ts`); pass `{ pdf: true }` for the bytes.
   This is what makes issuing idempotent: look up by order number before retrying a `generateInvoice` whose
   outcome is unknown, rather than risking a second legal document
+- `createReceipt(options, items)` - Issues a receipt. `callId` (`hivasAzonosito`) makes it idempotent: a
+  reused id fails with code 338 instead of issuing a duplicate
+- `reverseReceipt(receiptNumber, options?)` - Issues a storno receipt; returns the storno receipt, not the original
+- `findReceipt(query, options?)` - Looks a receipt up by receipt number, order number or call id; `null` on code 339
+- `sendReceipt(receiptNumber, email?)` - Emails an issued receipt. Unknown receipt → code 7, not 339
 - `testConnection()` - Validates API credentials by looking up an invoice number that cannot exist. Returns
   `false` only for credential errors; other failures (e.g. unpaid subscription, code 136) throw a
   `SzamlazzError`

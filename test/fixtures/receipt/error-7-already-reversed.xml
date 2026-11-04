@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xmlnyugtavalasz xmlns="http://www.szamlazz.hu/xmlnyugtavalasz" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.szamlazz.hu/xmlnyugtavalasz https://www.szamlazz.hu/szamla/docs/xsds/nyugtavalasz/xmlnyugtavalasz.xsd">
+<sikeres>false</sikeres>
+<hibakod>7</hibakod>
+<hibauzenet><![CDATA[Hiányzó adat: sztornózandó nyugta (ezt a nyugtát már sztornózták: SZCT-2026-15).]]></hibauzenet>
+</xmlnyugtavalasz>

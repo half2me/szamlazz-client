@@ -18,4 +18,5 @@ jobs:
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # Unit suite only: no network, no documents issued. The live suite runs in live.yml.
       - run: pnpm test

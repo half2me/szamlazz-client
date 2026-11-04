@@ -1,12 +1,15 @@
 {
   "name": "@halftome/szamlazz-client",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "description": "Javascript client for using szamlazz.hu API",
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w",
-    "test": "vitest run"
+    "test": "vitest run --project unit",
+    "test:live": "vitest run --project live",
+    "test:all": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "repository": {
     "type": "git",

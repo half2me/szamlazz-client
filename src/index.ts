@@ -9,9 +9,17 @@ import type {
   KeyAuth,
   CredentialAuth,
   InvoiceItemResponse,
+  Receipt,
+  ReceiptEmail,
+  ReceiptLineItem,
+  ReceiptOptions,
+  ReceiptQuery,
+  ReceiptQueryOptions,
+  ReverseReceiptOptions,
 } from './types.js'
 import { isSzamlazzError, parseError, SzamlazzErrorCategory, SzamlazzErrorCode } from './errors.js'
 import { decodeQueriedInvoice } from './query.js'
+import { assertReceiptSent, decodeReceipt } from './receipt.js'
 import { URL } from 'url'
 
 const toDateStr = (date: Date) => date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Budapest' })
@@ -22,26 +30,28 @@ interface AgentResponse {
   headers: Headers
 }
 
-const QUERY_IDENTIFIERS = ['invoiceNumber', 'orderNumber', 'externalId'] as const
+const INVOICE_QUERY_IDENTIFIERS = ['invoiceNumber', 'orderNumber', 'externalId'] as const
+const RECEIPT_QUERY_IDENTIFIERS = ['receiptNumber', 'orderNumber', 'callId'] as const
 
 /**
  * Rejects a lookup that names no document, or more than one.
  *
  * This has to be checked rather than left to the type, because getting it wrong
  * fails in the worst possible direction: szamlazz.hu answers a request with no
- * usable selector with code 7, the very code {@link Client.findInvoice} reads as
- * "no such document". An empty or ambiguous query would therefore come back as a
- * confident `null` — and a caller looking a document up to avoid issuing a
- * duplicate would take that as permission to issue one.
+ * usable selector with a "not found"-style error, which {@link Client.findInvoice}
+ * and {@link Client.findReceipt} read as "no such document". An empty or
+ * ambiguous query would therefore come back as a confident `null` — and a caller
+ * looking a document up to avoid issuing a duplicate would take that as
+ * permission to issue one.
  *
  * @throws {TypeError} which is deliberately not a `SzamlazzError`: nothing was sent, and the caller's own code is what needs fixing.
  */
-const assertOneIdentifier = (query: InvoiceQuery): void => {
-  const named = QUERY_IDENTIFIERS.filter((key) => query[key] !== undefined && query[key] !== null)
+const assertOneIdentifier = (method: string, keys: readonly string[], query: Record<string, unknown>): void => {
+  const named = keys.filter((key) => query[key] !== undefined && query[key] !== null)
 
   if (named.length !== 1) {
     throw new TypeError(
-      `findInvoice needs exactly one of ${QUERY_IDENTIFIERS.join(', ')}, ` +
+      `${method} needs exactly one of ${keys.join(', ')}, ` +
         (named.length ? `but was given ${named.join(' and ')}` : 'but was given none'),
     )
   }
@@ -49,9 +59,23 @@ const assertOneIdentifier = (query: InvoiceQuery): void => {
   const [key] = named
   const value = query[key]
   if (typeof value !== 'string' || value.trim() === '') {
-    throw new TypeError(`findInvoice was given an empty ${key}`)
+    throw new TypeError(`${method} was given an empty ${key}`)
   }
 }
+
+/** Receipt numbers are required by every receipt operation that takes one; catch an empty one before sending. */
+const assertReceiptNumber = (method: string, receiptNumber: string): void => {
+  if (typeof receiptNumber !== 'string' || receiptNumber.trim() === '') {
+    throw new TypeError(`${method} was given an empty receipt number`)
+  }
+}
+
+/** Namespace attributes for a receipt request root. Each receipt operation has its own namespace and XSD. */
+const receiptNamespace = (root: string, xsd: string) => ({
+  '@xmlns': `http://www.szamlazz.hu/${root}`,
+  '@xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+  '@xsi:schemaLocation': `http://www.szamlazz.hu/${root} https://www.szamlazz.hu/szamla/docs/xsds/${xsd}/${root}.xsd`,
+})
 
 export class Client {
   readonly key?: string
@@ -127,6 +151,26 @@ export class Client {
       felhasznalo: this.username,
       jelszo: this.password,
     }
+  }
+
+  /**
+   * Credentials in the order the receipt schemas list them. Two of those schemas
+   * (storno, send) are `xs:sequence`, where order matters, unlike the invoice ones.
+   */
+  private receiptAuth() {
+    return {
+      felhasznalo: this.username,
+      jelszo: this.password,
+      szamlaagentkulcs: this.key,
+    }
+  }
+
+  /** Sends a receipt request and decodes the `<xmlnyugtavalasz>` reply shared by create, storno and query. */
+  private async receiptRequest(type: string, doc: object): Promise<Receipt> {
+    const { body, headers } = await this.sendRequest(type, doc)
+    const error = parseError(body, headers)
+    if (error) throw error
+    return decodeReceipt(body)
   }
 
   async generateInvoice(options: InvoiceOptions, items: Array<LineItem> = []) {
@@ -318,7 +362,7 @@ export class Client {
    *   come back from szamlazz.hu as code 7 and be reported as a confident "not found".
    */
   async findInvoice(query: InvoiceQuery, options: QueryOptions = {}): Promise<QueriedInvoice | null> {
-    assertOneIdentifier(query)
+    assertOneIdentifier('findInvoice', INVOICE_QUERY_IDENTIFIERS, query)
 
     const doc = {
       xmlszamlaxml: {
@@ -343,6 +387,175 @@ export class Client {
     }
 
     return decodeQueriedInvoice(body)
+  }
+
+  /**
+   * Issues a receipt (nyugta).
+   *
+   * Set {@link ReceiptOptions.callId} to make this safe to retry: szamlazz.hu
+   * refuses a second receipt with a call id it has already seen, throwing
+   * {@link SzamlazzErrorCode.DuplicateReceiptCallId} (338) rather than issuing a
+   * duplicate. On that error the receipt from the earlier attempt exists — fetch
+   * it with `findReceipt({ callId })`.
+   *
+   * HUF amounts are checked strictly: see {@link ReceiptLineItem}.
+   *
+   * @returns the receipt as szamlazz.hu recorded it, including its number and totals,
+   *   and the PDF when {@link ReceiptOptions.downloadPDF} was set.
+   * @throws {SzamlazzError} when szamlazz.hu refused the receipt.
+   */
+  async createReceipt(options: ReceiptOptions, items: Array<ReceiptLineItem>): Promise<Receipt> {
+    const doc = {
+      xmlnyugtacreate: {
+        ...receiptNamespace('xmlnyugtacreate', 'nyugtacreate'),
+        beallitasok: {
+          ...this.receiptAuth(),
+          pdfLetoltes: options.downloadPDF ?? false,
+        },
+        fejlec: {
+          hivasAzonosito: options.callId,
+          elotag: options.prefix,
+          fizmod: options.paymentMethod,
+          penznem: options.currency,
+          devizabank: options.exchangeBank,
+          devizaarf: options.exchangeRate,
+          megjegyzes: options.comment,
+          pdfSablon: options.template,
+          fokonyvVevo: options.customerLedgerId,
+          rendelesSzam: options.orderNumber,
+        },
+        tetelek: {
+          tetel: items.map((i) => ({
+            megnevezes: i.name,
+            azonosito: i.id,
+            mennyiseg: i.amount,
+            mennyisegiEgyseg: i.amountName,
+            nettoEgysegar: i.netUnitPrice,
+            afakulcs: i.vatRate,
+            netto: i.netAmount,
+            afa: i.taxAmount,
+            brutto: i.grossAmount,
+            fokonyv: i.ledger && { arbevetel: i.ledger.revenue, afa: i.ledger.vat },
+            megjegyzes: i.comment,
+            torloKod: i.dataErasureCodes,
+          })),
+        },
+        kifizetesek: options.payments?.length
+          ? {
+              kifizetes: options.payments.map((p) => ({
+                fizetoeszkoz: p.method,
+                osszeg: p.amount,
+                leiras: p.description,
+              })),
+            }
+          : undefined,
+      },
+    }
+
+    return this.receiptRequest('action-szamla_agent_nyugta_create', doc)
+  }
+
+  /**
+   * Reverses (stornos) a receipt by issuing a storno receipt for it.
+   *
+   * @returns the new storno receipt ({@link ReceiptType.Reversal}), not the reversed one.
+   * @throws {SzamlazzError} when the receipt does not exist, was already reversed, or is
+   *   itself a storno receipt. szamlazz.hu reports all three as {@link SzamlazzErrorCode.MissingData}
+   *   (7) and tells them apart only in the message, so a missing receipt is not
+   *   {@link SzamlazzErrorCode.ReceiptNotFound} here.
+   */
+  async reverseReceipt(receiptNumber: string, options: ReverseReceiptOptions = {}): Promise<Receipt> {
+    assertReceiptNumber('reverseReceipt', receiptNumber)
+
+    const doc = {
+      xmlnyugtast: {
+        ...receiptNamespace('xmlnyugtast', 'nyugtast'),
+        beallitasok: {
+          ...this.receiptAuth(),
+          pdfLetoltes: options.downloadPDF ?? false,
+        },
+        fejlec: {
+          nyugtaszam: receiptNumber,
+          pdfSablon: options.template,
+          hivasAzonosito: options.callId,
+        },
+      },
+    }
+
+    return this.receiptRequest('action-szamla_agent_nyugta_storno', doc)
+  }
+
+  /**
+   * Looks up an issued receipt by its number, or by the order number or call id it was created with.
+   *
+   * **Returns `null` when no such receipt exists** — szamlazz.hu reports that with
+   * {@link SzamlazzErrorCode.ReceiptNotFound} (339) — instead of throwing, like
+   * {@link findInvoice}. Every other failure still throws.
+   *
+   * @throws {SzamlazzError} when the request failed for any reason other than the receipt not existing.
+   * @throws {TypeError} when `query` names no receipt or more than one.
+   */
+  async findReceipt(query: ReceiptQuery, options: ReceiptQueryOptions = {}): Promise<Receipt | null> {
+    assertOneIdentifier('findReceipt', RECEIPT_QUERY_IDENTIFIERS, query)
+
+    const doc = {
+      xmlnyugtaget: {
+        ...receiptNamespace('xmlnyugtaget', 'nyugtaget'),
+        beallitasok: {
+          ...this.receiptAuth(),
+          pdfLetoltes: options.pdf ?? false,
+        },
+        fejlec: {
+          nyugtaszam: query.receiptNumber,
+          rendelesSzam: query.orderNumber,
+          hivasAzonosito: query.callId,
+          pdfSablon: options.template,
+        },
+      },
+    }
+
+    try {
+      return await this.receiptRequest('action-szamla_agent_nyugta_get', doc)
+    } catch (e) {
+      if (isSzamlazzError(e) && e.code === SzamlazzErrorCode.ReceiptNotFound) return null
+      throw e
+    }
+  }
+
+  /**
+   * Emails an already issued receipt.
+   *
+   * With no `email` details, szamlazz.hu resends the receipt's previous
+   * notification — and fails with {@link SzamlazzErrorCode.MissingData} (7) if
+   * there was none, which is the case for any receipt not yet emailed.
+   *
+   * @throws {SzamlazzError} when szamlazz.hu did not send it: {@link SzamlazzErrorCode.MissingData}
+   *   (7) for an unknown receipt number — not {@link SzamlazzErrorCode.ReceiptNotFound} —
+   *   and {@link SzamlazzErrorCode.EmailSendFailed} (43) when delivery failed.
+   */
+  async sendReceipt(receiptNumber: string, email: ReceiptEmail = {}): Promise<void> {
+    assertReceiptNumber('sendReceipt', receiptNumber)
+
+    const doc = {
+      xmlnyugtasend: {
+        ...receiptNamespace('xmlnyugtasend', 'nyugtasend'),
+        beallitasok: this.receiptAuth(),
+        fejlec: {
+          nyugtaszam: receiptNumber,
+        },
+        emailKuldes: {
+          email: email.to,
+          emailReplyto: email.replyTo,
+          emailTargy: email.subject,
+          emailSzoveg: email.content,
+        },
+      },
+    }
+
+    const { body, headers } = await this.sendRequest('action-szamla_agent_nyugta_send', doc)
+    const error = parseError(body, headers)
+    if (error) throw error
+    assertReceiptSent(body)
   }
 }
 

@@ -22,6 +22,6 @@ jobs:
       - name: Set version from tag
         run: npm pkg set version="${GITHUB_REF_NAME#v}"
       - run: pnpm build
-      - run: pnpm test
+      - run: pnpm test:all
       - name: Publish to NPM
         run: pnpm publish --access public --no-git-checks --provenance

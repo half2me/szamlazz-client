@@ -55,6 +55,107 @@ Two caveats worth knowing:
 
 Only documents issued through szamlazz.hu itself can be retrieved this way.
 
+### Receipts (nyugta)
+
+Receipts are issued, reversed, looked up and emailed through their own methods. Unlike invoices they have
+no customer details, no dates (a receipt is dated the day it is issued) and use a receipt-only prefix.
+
+```javascript
+import SZClient, { PaymentMethod, ReceiptTemplate, SzamlazzErrorCode, isSzamlazzError } from '@halftome/szamlazz-client'
+
+const client = new SZClient({ key: 'your-agent-key' })
+
+const receipt = await client.createReceipt(
+  {
+    prefix: 'NYGTA', // up to 5 uppercase letters and digits, not a prefix you use for invoices
+    paymentMethod: PaymentMethod.Card,
+    currency: 'HUF',
+    comment: 'Monthly pass',
+    orderNumber: 'order-1234',
+    callId: 'payment-5678', // makes the call idempotent, see below
+    downloadPDF: true,
+    template: ReceiptTemplate.Narrow80mm, // optional: A4 (default), ticket, ticket with logo or 80 mm
+    payments: [
+      // optional breakdown by means of payment; must add up to the gross total
+      { method: 'SZÉP kártya', amount: 6000, description: 'OTP SZÉP kártya' },
+      { method: 'bankkártya', amount: 4000 },
+    ],
+  },
+  [
+    {
+      name: 'Monthly pass',
+      amount: 1,
+      amountName: 'db',
+      netUnitPrice: 7874.02,
+      vatRate: 27,
+      netAmount: 7874.02,
+      taxAmount: 2125.98,
+      grossAmount: 10000,
+    },
+  ],
+)
+
+console.log(receipt.number, receipt.totals.gross) // 'NYGTA-2026-1', 10000
+// receipt.pdf is a Buffer when downloadPDF was set
+
+const storno = await client.reverseReceipt(receipt.number, { callId: 'payment-5678-storno' })
+console.log(storno.number, storno.type) // 'NYGTA-2026-2', 'SN' — the reply describes the new storno receipt
+
+const found = await client.findReceipt({ receiptNumber: receipt.number }, { pdf: true }) // or { orderNumber } or { callId }
+console.log(found?.reversed) // true
+
+await client.sendReceipt(receipt.number, {
+  to: 'customer@example.com',
+  replyTo: 'club@example.com',
+  subject: 'Your receipt',
+  content: 'Thank you!',
+})
+```
+
+A few rules worth knowing:
+
+- **HUF amounts must already be rounded.** On a HUF receipt each line's `grossAmount` must be a whole number,
+  `netAmount` and `taxAmount` may have at most two decimals, and `netAmount + taxAmount` must equal
+  `grossAmount` exactly. szamlazz.hu rejects anything else with code 261, 363, 364 or 365.
+- **Use `callId` to make retries safe.** szamlazz.hu refuses a second receipt with a call id it has already
+  seen, throwing `SzamlazzErrorCode.DuplicateReceiptCallId` (338) instead of issuing a duplicate. Take the id
+  from something stable, such as your payment id. On a 338 the receipt from the earlier attempt exists, and
+  you can fetch it by the same call id:
+
+  ```javascript
+  try {
+    return await client.createReceipt(options, items)
+  } catch (e) {
+    if (isSzamlazzError(e) && e.code === SzamlazzErrorCode.DuplicateReceiptCallId) {
+      return await client.findReceipt({ callId: options.callId })
+    }
+    throw e
+  }
+  ```
+
+- `findReceipt()` returns `null` for a receipt that does not exist (code 339), like `findInvoice()`.
+- `reverseReceipt()` fails with code 7 (`MissingData`) for a receipt that does not exist, was already
+  reversed, or is itself a storno receipt; only the message tells them apart. `sendReceipt()` also reports
+  an unknown receipt as code 7, not 339.
+- After a reversal both receipts read `reversed: true`: check `type` (`NY` or `SN`) to tell the original
+  from its storno. Only the storno names the other one, in `reversedReceiptNumber`.
+- `sendReceipt()` with no email details resends the previous notification, which fails with code 7 for a
+  receipt that was never emailed. Pass at least `to`.
+- A foreign-currency receipt without `exchangeRate` gets the day's MNB rate from szamlazz.hu.
+- Receipts also accept the `ÁKK` VAT code, a 10% rate, and `Ft` as a currency.
+
+### Tests
+
+```bash
+pnpm test       # unit suite: fixtures and pure logic, no network, about a second
+pnpm test:live  # live suite: issues and reverses real documents on szamlazz.hu's demo account
+pnpm test:all   # both
+```
+
+The unit suite runs on every push and pull request. The live suite only runs when started by hand (the
+"Live API tests" workflow in GitHub Actions) and before every publish. Live tests are the `*.live.test.ts` files; the receipt fixtures under
+`test/fixtures/receipt/` are replies captured from the demo account.
+
 ### Error handling
 
 When szamlazz.hu rejects a request it answers with an error code (`<hibakod>` in the XML body, or the

@@ -29,7 +29,22 @@ export enum PaymentMethod {
 
 export type Currency = 'HUF' | 'EUR' | 'USD' | 'GBP' | 'CHF' | 'JPY' | 'CNY' | 'CZK' | 'PLN' | 'RON'
 
-export type LanguageCode = 'hu' | 'en' | 'de' | 'it' | 'ro' | 'sk' | 'hr' | 'fr' | 'es' | 'cz' | 'pl' | 'bg' | 'nl' | 'ru' | 'si'
+export type LanguageCode =
+  | 'hu'
+  | 'en'
+  | 'de'
+  | 'it'
+  | 'ro'
+  | 'sk'
+  | 'hr'
+  | 'fr'
+  | 'es'
+  | 'cz'
+  | 'pl'
+  | 'bg'
+  | 'nl'
+  | 'ru'
+  | 'si'
 
 export enum InvoiceTemplate {
   SzlaMost = 'SzlaMost',
@@ -264,5 +279,216 @@ export interface QueriedInvoice {
   /** Only present when {@link QueryOptions.pdf} was set. */
   pdf?: Buffer
   /** The unmodified response body, for the fields this client does not model. */
+  response: string
+}
+
+/**
+ * Receipt (nyugta) VAT rate. Receipts accept every invoice rate plus `ÁKK`
+ * (áfakörön kívüli) and `10`, which the receipt docs list and the invoice ones
+ * do not. Both were accepted by szamlazz.hu when tested live.
+ */
+export type ReceiptVATRate = VATRate | 10 | 'ÁKK'
+
+/** Receipt currency. Besides the ISO codes, receipts accept `Ft` as a synonym for HUF. */
+export type ReceiptCurrency = Currency | 'Ft'
+
+/** Built-in receipt PDF layouts (`pdfSablon`). szamlazz.hu falls back to {@link Default} for an unknown value. */
+export enum ReceiptTemplate {
+  /** A4 page. */
+  Default = 'A',
+  /** Ticket. */
+  Ticket = 'J',
+  /** Ticket with the account's logo. */
+  TicketWithLogo = 'L',
+  /** 80 mm thermal-printer width. */
+  Narrow80mm = 'N',
+}
+
+/** Document type of a receipt (`<alap><tipus>`). */
+export enum ReceiptType {
+  /** An ordinary receipt (nyugta). */
+  Receipt = 'NY',
+  /** A storno receipt that reverses another one (sztornó nyugta). */
+  Reversal = 'SN',
+}
+
+/** General ledger codes for a receipt line (`fokonyv`). */
+export interface ReceiptLedger {
+  /** Sales revenue ledger account (`arbevetel`). */
+  revenue?: string
+  /** VAT ledger account (`afa`). */
+  vat?: string
+}
+
+/**
+ * A receipt line. Same fields as an invoice {@link LineItem}, so invoice lines
+ * can be reused as long as their rate is one receipts accept.
+ *
+ * On a HUF receipt szamlazz.hu checks the amounts strictly, without rounding:
+ * `grossAmount` must be a whole number, `netAmount` and `taxAmount` may have at
+ * most two decimals, and `netAmount + taxAmount` must equal `grossAmount`
+ * exactly (errors 261, 363, 364, 365). Round before sending.
+ */
+export interface ReceiptLineItem extends Omit<LineItem, 'vatRate'> {
+  vatRate: ReceiptVATRate
+  ledger?: ReceiptLedger
+  /** How many data erasure codes to reserve for this line (`torloKod`) — a count, not a code. */
+  dataErasureCodes?: number
+}
+
+/**
+ * One entry of the per-payment-method breakdown (`kifizetes`). When given, the
+ * amounts must add up to the receipt's gross total (error 340 otherwise).
+ */
+export interface ReceiptPayment {
+  /** Means of payment (`fizetoeszkoz`), free text, e.g. `bankkártya` or `SZÉP kártya`. */
+  method: string
+  amount: number
+  /** Optional detail shown with the payment (`leiras`), e.g. the voucher issuer. */
+  description?: string
+}
+
+export interface ReceiptOptions {
+  /**
+   * Receipt number prefix (`elotag`), e.g. `NYGTA` → `NYGTA-2026-1`. At most 5
+   * uppercase letters and digits (error 337 — the length limit is not in the docs
+   * but szamlazz.hu enforces it). It must not be a prefix the account uses for
+   * invoices (error 336), nor one another account with the same tax number uses
+   * (error 200).
+   */
+  prefix: string
+  /** Payment method (`fizmod`), free text; the {@link PaymentMethod} values are the common ones. */
+  paymentMethod: PaymentMethod | string
+  currency: ReceiptCurrency
+  /**
+   * Exchange rate against HUF (`devizaarf`), for a receipt not in HUF. When left
+   * out, szamlazz.hu fills in the day's MNB rate itself.
+   */
+  exchangeRate?: number
+  /** The bank whose rate {@link exchangeRate} is (`devizabank`), e.g. `MNB`. */
+  exchangeBank?: string
+  /** Free text printed on the receipt (`megjegyzes`). */
+  comment?: string
+  template?: ReceiptTemplate
+  /** The customer's general ledger id (`fokonyvVevo`). */
+  customerLedgerId?: string
+  /** Order number printed on the receipt (`rendelesSzam`). {@link Client.findReceipt} can look a receipt up by it. */
+  orderNumber?: string
+  /**
+   * Unique id for this call (`hivasAzonosito`), which makes creating a receipt
+   * idempotent: szamlazz.hu refuses a second receipt with an id it has already
+   * seen, with {@link SzamlazzErrorCode.DuplicateReceiptCallId} (338), instead of
+   * issuing a duplicate. Derive it from something stable on your side (a payment
+   * id), not from the attempt. On a 338, fetch the existing receipt with
+   * `findReceipt({ callId })`.
+   */
+  callId?: string
+  /** Include the receipt PDF in the response (`pdfLetoltes`). */
+  downloadPDF?: boolean
+  /** Per-payment-method breakdown (`kifizetesek`). */
+  payments?: ReceiptPayment[]
+}
+
+export interface ReverseReceiptOptions {
+  /** Unique id for this call (`hivasAzonosito`). See {@link ReceiptOptions.callId}. */
+  callId?: string
+  /** Include the storno receipt's PDF in the response (`pdfLetoltes`). */
+  downloadPDF?: boolean
+  template?: ReceiptTemplate
+}
+
+/**
+ * Which receipt to look up: by receipt number, or by the {@link ReceiptOptions.orderNumber}
+ * or {@link ReceiptOptions.callId} it was created with. Exactly one, enforced at runtime
+ * too — see {@link InvoiceQuery}. (szamlazz.hu itself would match a receipt against every
+ * selector given, but one is always enough.)
+ *
+ * Looking up by `callId` is not described in the docs, but the schema accepts it and
+ * szamlazz.hu answers it when tested live.
+ */
+export type ReceiptQuery =
+  | { receiptNumber: string; orderNumber?: never; callId?: never }
+  | { orderNumber: string; receiptNumber?: never; callId?: never }
+  | { callId: string; receiptNumber?: never; orderNumber?: never }
+
+export interface ReceiptQueryOptions extends QueryOptions {
+  /** PDF layout to render {@link QueryOptions.pdf} with. */
+  template?: ReceiptTemplate
+}
+
+/**
+ * Email settings for {@link Client.sendReceipt}. With none of them set, szamlazz.hu
+ * resends the receipt's previous notification, and fails with code 7 if there was none.
+ */
+export interface ReceiptEmail {
+  /** Recipient address (`email`). */
+  to?: string
+  /** Reply-to address (`emailReplyto`). */
+  replyTo?: string
+  /** Subject line (`emailTargy`). */
+  subject?: string
+  /** Body text (`emailSzoveg`). */
+  content?: string
+}
+
+/** A line of an issued receipt, as szamlazz.hu reports it back. */
+export interface ReceiptItem {
+  id?: string
+  name: string
+  amount: number
+  amountName: string
+  netUnitPrice: number
+  /** The VAT percentage. A line with a named rate reports `0` here and names it in {@link vatType}. */
+  vatRate: number
+  /** The named VAT code (`afatipus`), e.g. `AAM` or `ÁKK`. Absent for an ordinary percentage rate. */
+  vatType?: string
+  netAmount: number
+  taxAmount: number
+  grossAmount: number
+  ledger?: ReceiptLedger
+}
+
+/**
+ * A receipt as szamlazz.hu reports it: the reply to {@link Client.createReceipt},
+ * {@link Client.reverseReceipt} (where it describes the new storno receipt, not
+ * the reversed one) and {@link Client.findReceipt}.
+ */
+export interface Receipt {
+  /** szamlazz.hu's internal document id. */
+  id?: string
+  /** The {@link ReceiptOptions.callId} the receipt was created with, if any. */
+  callId?: string
+  number: string
+  /** {@link ReceiptType.Receipt} or {@link ReceiptType.Reversal}. */
+  type: ReceiptType | string
+  /**
+   * `stornozott`. True on a receipt that has been reversed — and also on the storno
+   * receipt itself, so check {@link type} to tell the two apart.
+   */
+  reversed: boolean
+  /**
+   * On a storno receipt, the number of the receipt it reverses. szamlazz.hu does
+   * not report the opposite link: a reversed receipt does not name its storno.
+   */
+  reversedReceiptNumber?: string
+  /** `YYYY-MM-DD`, as szamlazz.hu reports it. Left a string for the same reason as {@link QueriedInvoice.issueDate}. */
+  issueDate: string
+  paymentMethod: string
+  currency: string
+  exchangeBank?: string
+  /** `0` when not reported. */
+  exchangeRate: number
+  comment?: string
+  customerLedgerId?: string
+  /** True for a receipt issued on a szamlazz.hu test account. */
+  test: boolean
+  orderNumber?: string
+  items: ReceiptItem[]
+  payments: ReceiptPayment[]
+  totals: QueriedTotals
+  vatSummary: QueriedVatSummary[]
+  /** Only present when the PDF was requested. */
+  pdf?: Buffer
+  /** The unmodified response body. */
   response: string
 }
