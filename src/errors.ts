@@ -13,6 +13,8 @@ import { textOf } from './xml.js'
  * Sources:
  * - https://docs.szamlazz.hu/agent/basics/error-handling (current documentation)
  * - https://docs.szamlazz.hu/agent/querying_xml/response (code 7)
+ * - https://docs.szamlazz.hu/agent/generating_receipt/response (codes 336-340)
+ * - https://docs.szamlazz.hu/agent/generating_receipt/settings_and_rules/item-amounts (codes 363-365)
  * - Számla Agent PDF documentation v3.6 (codes 49, 52, 56, 250, 335-340, 395, 396)
  */
 export enum SzamlazzErrorCode {
@@ -83,7 +85,7 @@ export enum SzamlazzErrorCode {
   /** `afaErtek` != `nettoErtek` * `afakulcs` / 100. The message names the product. */
   ItemVatValueMismatch = 260,
 
-  /** `bruttoErtek` != `nettoErtek` + `afaErtek`. The message names the product. */
+  /** `bruttoErtek` != `nettoErtek` + `afaErtek` (on a receipt: `brutto` != `netto` + `afa`, exactly). The message names the product. */
   ItemGrossValueMismatch = 261,
 
   /** Same as {@link ItemNetValueMismatch}, but the message identifies the item by row number. */
@@ -104,20 +106,38 @@ export enum SzamlazzErrorCode {
   /** Invalid prefix format — only uppercase letters and digits are allowed. */
   InvalidPrefixFormat = 337,
 
-  /** The call identifier used to create the receipt already exists. */
+  /**
+   * The call identifier (`hivasAzonosito`) was already used, so the receipt was not created again.
+   * A receipt from the earlier call with this id exists.
+   */
   DuplicateReceiptCallId = 338,
 
-  /** No such receipt number. */
+  /** No such receipt number. Documented for querying and sending a receipt. */
   ReceiptNotFound = 339,
 
   /** The settled amount of the receipt differs from its gross total. */
   ReceiptPaymentMismatch = 340,
+
+  /** Receipt only: on a HUF receipt, a line's gross value (`brutto`) must be a whole number. The message names the product. */
+  ReceiptGrossNotWhole = 363,
+
+  /** Receipt only: on a HUF receipt, a line's net value (`netto`) may have at most 2 decimals. The message names the product. */
+  ReceiptNetTooPrecise = 364,
+
+  /** Receipt only: on a HUF receipt, a line's VAT value (`afa`) may have at most 2 decimals. The message names the product. */
+  ReceiptVatTooPrecise = 365,
 
   /** Unaccepted VAT rate value. */
   InvalidVatRate = 395,
 
   /** No date on the invoice may be earlier than 2010-01-01. */
   DateTooEarly = 396,
+
+  /** Not enough data erasure codes: the account's uploaded codes ran out and szamlazz.hu could not supply the rest. */
+  NotEnoughDataErasureCodes = 520,
+
+  /** Data erasure codes only work with the default template (SzlaMost on invoices, the standard layout on receipts). */
+  DataErasureCodeTemplateNotSupported = 521,
 
   /** The maximum number of data erasure codes for an item has been reached. */
   TooManyDataErasureCodes = 537,
@@ -178,8 +198,13 @@ const categories: Record<number, SzamlazzErrorCategory> = {
   [SzamlazzErrorCode.DuplicateReceiptCallId]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.ReceiptNotFound]: SzamlazzErrorCategory.NotFound,
   [SzamlazzErrorCode.ReceiptPaymentMismatch]: SzamlazzErrorCategory.Validation,
+  [SzamlazzErrorCode.ReceiptGrossNotWhole]: SzamlazzErrorCategory.Validation,
+  [SzamlazzErrorCode.ReceiptNetTooPrecise]: SzamlazzErrorCategory.Validation,
+  [SzamlazzErrorCode.ReceiptVatTooPrecise]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.InvalidVatRate]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.DateTooEarly]: SzamlazzErrorCategory.Validation,
+  [SzamlazzErrorCode.NotEnoughDataErasureCodes]: SzamlazzErrorCategory.Account,
+  [SzamlazzErrorCode.DataErasureCodeTemplateNotSupported]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.TooManyDataErasureCodes]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.DataErasureCodeNotAllowedInDemo]: SzamlazzErrorCategory.Account,
   [SzamlazzErrorCode.DataErasureCodeNotEnabled]: SzamlazzErrorCategory.Account,

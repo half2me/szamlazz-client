@@ -55,6 +55,89 @@ Two caveats worth knowing:
 
 Only documents issued through szamlazz.hu itself can be retrieved this way.
 
+### Receipts (nyugta)
+
+Receipts are issued, reversed, looked up and emailed through their own methods. Unlike invoices they have
+no customer details, no dates (a receipt is dated the day it is issued) and use a receipt-only prefix.
+
+```javascript
+import SZClient, { PaymentMethod, ReceiptTemplate, SzamlazzErrorCode, isSzamlazzError } from '@halftome/szamlazz-client'
+
+const client = new SZClient({ key: 'your-agent-key' })
+
+const receipt = await client.createReceipt(
+  {
+    prefix: 'NYGTA', // uppercase letters and digits, and not a prefix you use for invoices
+    paymentMethod: PaymentMethod.Card,
+    currency: 'HUF',
+    comment: 'Monthly pass',
+    orderNumber: 'order-1234',
+    callId: 'payment-5678', // makes the call idempotent, see below
+    downloadPDF: true,
+    template: ReceiptTemplate.Narrow80mm, // optional: A4 (default), ticket, ticket with logo or 80 mm
+    payments: [
+      // optional breakdown by means of payment; must add up to the gross total
+      { method: 'SZÉP kártya', amount: 6000, description: 'OTP SZÉP kártya' },
+      { method: 'bankkártya', amount: 4000 },
+    ],
+  },
+  [
+    {
+      name: 'Monthly pass',
+      amount: 1,
+      amountName: 'db',
+      netUnitPrice: 7874.02,
+      vatRate: 27,
+      netAmount: 7874.02,
+      taxAmount: 2125.98,
+      grossAmount: 10000,
+    },
+  ],
+)
+
+console.log(receipt.number, receipt.totals.gross) // 'NYGTA-2026-1', 10000
+// receipt.pdf is a Buffer when downloadPDF was set
+
+const storno = await client.reverseReceipt(receipt.number, { callId: 'payment-5678-storno' })
+console.log(storno.number, storno.type) // 'NYGTA-2026-2', 'SN' — the reply describes the new storno receipt
+
+const found = await client.findReceipt({ receiptNumber: receipt.number }, { pdf: true }) // or { orderNumber }
+console.log(found?.reversed) // true
+
+await client.sendReceipt(receipt.number, {
+  to: 'customer@example.com',
+  replyTo: 'club@example.com',
+  subject: 'Your receipt',
+  content: 'Thank you!',
+})
+```
+
+A few rules worth knowing:
+
+- **HUF amounts must already be rounded.** On a HUF receipt each line's `grossAmount` must be a whole number,
+  `netAmount` and `taxAmount` may have at most two decimals, and `netAmount + taxAmount` must equal
+  `grossAmount` exactly. szamlazz.hu rejects anything else with code 261, 363, 364 or 365.
+- **Use `callId` to make retries safe.** szamlazz.hu refuses a second receipt with a call id it has already
+  seen, throwing `SzamlazzErrorCode.DuplicateReceiptCallId` (338) instead of issuing a duplicate. Take the id
+  from something stable, such as your payment id. On a 338, the receipt from the earlier attempt exists:
+  set an `orderNumber` too, so you can fetch it with `findReceipt({ orderNumber })`.
+
+  ```javascript
+  try {
+    return await client.createReceipt(options, items)
+  } catch (e) {
+    if (isSzamlazzError(e) && e.code === SzamlazzErrorCode.DuplicateReceiptCallId) {
+      return await client.findReceipt({ orderNumber: options.orderNumber })
+    }
+    throw e
+  }
+  ```
+
+- `findReceipt()` returns `null` for a receipt that does not exist (code 339), like `findInvoice()`.
+- A receipt that was already reversed, or is itself a storno receipt, cannot be reversed. szamlazz.hu reports
+  these with a message rather than a dedicated code.
+- Receipts also accept the `ÁKK` VAT code and `Ft` as a currency.
+
 ### Error handling
 
 When szamlazz.hu rejects a request it answers with an error code (`<hibakod>` in the XML body, or the
