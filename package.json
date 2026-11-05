@@ -4,12 +4,12 @@
   "type": "module",
   "description": "Javascript client for using szamlazz.hu API",
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc -w",
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -w -p tsconfig.build.json",
     "test": "vitest run --project unit",
     "test:live": "vitest run --project live",
     "test:all": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc"
   },
   "repository": {
     "type": "git",
@@ -22,7 +22,7 @@
   "engines": {
     "node": ">=26"
   },
-  "packageManager": "pnpm@10.32.1+sha512.a706938f0e89ac1456b6563eab4edf1d1faf3368d1191fc5c59790e96dc918e4456ab2e67d613de1043d2e8c81f87303e6b40d4ffeca9df15ef1ad567348f2be",
+  "packageManager": "pnpm@12.16.1+sha512.091d1dee7927575661b25dab3c2ae31cafc1c54d6b71ed6a6600cf0c1cb10434a447eae14015f1b23e2e6bedeed79df94a932e2164d2832280dce3fb32f656d1",
   "files": [
     "dist/**"
   ],
@@ -42,6 +42,7 @@
     "@types/node": "^26.6.6",
     "prettier": "^3.9.10",
     "typescript": "^7.0.2",
+    "vite": "^8.3.5",
     "vitest": "^5.1.0"
   },
   "dependencies": {
