@@ -15,7 +15,7 @@ import { textOf } from './xml.js'
  * - https://docs.szamlazz.hu/agent/querying_xml/response (code 7)
  * - https://docs.szamlazz.hu/agent/generating_receipt/response (codes 336-340)
  * - https://docs.szamlazz.hu/agent/generating_receipt/settings_and_rules/item-amounts (codes 363-365)
- * - Observed live on the demo account, undocumented (codes 43, 200)
+ * - Observed live on the demo account, undocumented (codes 43, 200, 468)
  * - Számla Agent PDF documentation v3.6 (codes 49, 52, 56, 250, 335-340, 395, 396)
  */
 export enum SzamlazzErrorCode {
@@ -150,6 +150,13 @@ export enum SzamlazzErrorCode {
   /** No date on the invoice may be earlier than 2010-01-01. */
   DateTooEarly = 396,
 
+  /**
+   * Two documents tried to take the same invoice-number prefix at the same instant
+   * ("Többen számláztok ugyanabban a pillanatban ugyanazzal a számlaszám előtaggal").
+   * Transient: the same request typically succeeds on retry after a short back-off.
+   */
+  ConcurrentInvoicing = 468,
+
   /** Not enough data erasure codes: the account's uploaded codes ran out and szamlazz.hu could not supply the rest. */
   NotEnoughDataErasureCodes = 520,
 
@@ -222,6 +229,7 @@ const categories: Record<number, SzamlazzErrorCategory> = {
   [SzamlazzErrorCode.ReceiptVatTooPrecise]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.InvalidVatRate]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.DateTooEarly]: SzamlazzErrorCategory.Validation,
+  [SzamlazzErrorCode.ConcurrentInvoicing]: SzamlazzErrorCategory.Service,
   [SzamlazzErrorCode.NotEnoughDataErasureCodes]: SzamlazzErrorCategory.Account,
   [SzamlazzErrorCode.DataErasureCodeTemplateNotSupported]: SzamlazzErrorCategory.Validation,
   [SzamlazzErrorCode.TooManyDataErasureCodes]: SzamlazzErrorCategory.Validation,
