@@ -11,9 +11,9 @@ import { defineConfig } from 'vitest/config'
  */
 export default defineConfig({
   // Vite hands esbuild the `target` from tsconfig.json, where @tsconfig/node26 sets es2025, a value
-  // the esbuild bundled with Vite 7 does not recognise yet. Only the test transform reads this;
-  // `pnpm build` is tsc.
-  esbuild: { tsconfigRaw: { compilerOptions: { target: 'es2024' } } },
+  // the esbuild bundled with Vite 7 does not recognise. Tests run on Node 26 untranspiled, so
+  // esnext. Only the test transform reads this; `pnpm build` is tsc and keeps es2025.
+  esbuild: { tsconfigRaw: { compilerOptions: { target: 'esnext' } } },
   test: {
     projects: [
       {
