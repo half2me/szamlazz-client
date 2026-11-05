@@ -6,6 +6,7 @@ import type {
   QueriedInvoice,
   QueryOptions,
   ReverseInvoiceOptions,
+  CorrectionInvoiceOptions,
   KeyAuth,
   CredentialAuth,
   InvoiceItemResponse,
@@ -20,7 +21,6 @@ import type {
 import { isSzamlazzError, parseError, SzamlazzErrorCategory, SzamlazzErrorCode } from './errors.js'
 import { decodeQueriedInvoice } from './query.js'
 import { assertReceiptSent, decodeReceipt } from './receipt.js'
-import { URL } from 'url'
 
 const toDateStr = (date: Date) => date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Budapest' })
 
@@ -78,16 +78,20 @@ const receiptNamespace = (root: string, xsd: string) => ({
 })
 
 export class Client {
-  readonly key?: string
-  readonly username?: string
-  readonly password?: string
+  // ECMAScript-private so the credentials never show up when a client is logged or serialized.
+  readonly #key?: string
+  readonly #username?: string
+  readonly #password?: string
 
   readonly apiUrl = 'https://www.szamlazz.hu/szamla/'
 
   constructor(auth: KeyAuth | CredentialAuth) {
-    this.key = (<KeyAuth>auth).key
-    this.username = (<CredentialAuth>auth).username
-    this.password = (<CredentialAuth>auth).password
+    if ('key' in auth) {
+      this.#key = auth.key
+    } else {
+      this.#username = auth.username
+      this.#password = auth.password
+    }
   }
 
   /**
@@ -127,7 +131,7 @@ export class Client {
 
       return decoded
     } catch (e) {
-      throw new Error(body)
+      throw new Error(`Could not decode the szamlazz.hu reply: ${body}`, { cause: e })
     }
   }
 
@@ -147,9 +151,9 @@ export class Client {
 
   private authAttributes() {
     return {
-      szamlaagentkulcs: this.key,
-      felhasznalo: this.username,
-      jelszo: this.password,
+      szamlaagentkulcs: this.#key,
+      felhasznalo: this.#username,
+      jelszo: this.#password,
     }
   }
 
@@ -159,9 +163,9 @@ export class Client {
    */
   private receiptAuth() {
     return {
-      felhasznalo: this.username,
-      jelszo: this.password,
-      szamlaagentkulcs: this.key,
+      felhasznalo: this.#username,
+      jelszo: this.#password,
+      szamlaagentkulcs: this.#key,
     }
   }
 
@@ -173,7 +177,15 @@ export class Client {
     return decodeReceipt(body)
   }
 
-  async generateInvoice(options: InvoiceOptions, items: Array<LineItem> = []) {
+  async generateInvoice(options: InvoiceOptions, items: Array<LineItem> = []): Promise<InvoiceItemResponse> {
+    return this.issueInvoice(options, items)
+  }
+
+  private async issueInvoice(
+    options: InvoiceOptions,
+    items: Array<LineItem>,
+    correctedInvoiceNumber?: string,
+  ): Promise<InvoiceItemResponse> {
     const doc = {
       xmlszamla: {
         '@xmlns': 'http://www.szamlazz.hu/xmlszamla',
@@ -197,8 +209,8 @@ export class Client {
           megjegyzes: options.comment,
           szamlaszamElotag: options.prefix,
           rendelesSzam: options.orderNumber,
-          helyesbitoszamla: options.correctedInvoiceNumber ? true : undefined,
-          helyesbitettSzamlaszam: options.correctedInvoiceNumber,
+          helyesbitoszamla: correctedInvoiceNumber ? true : undefined,
+          helyesbitettSzamlaszam: correctedInvoiceNumber,
           fizetve: options.settled,
           elonezetpdf: options.previewOnly,
           szamlaSablon: options.template,
@@ -249,7 +261,8 @@ export class Client {
    * and the correction invoice are valid together. The `items` must describe
    * the correction deltas — typically the original line items with negated
    * amounts, followed by the corrected line items. Partner details, payment
-   * method and currency cannot be changed by a correction invoice.
+   * method and currency cannot be changed by a correction invoice, so it takes
+   * no `customer`: the partner is the original invoice's.
    *
    * Each call produces a brand-new invoice with its own number — nothing is
    * edited in place — and that number is returned in the response.
@@ -274,8 +287,13 @@ export class Client {
    * @param invoice The number of the ORIGINAL invoice being corrected — never a
    *   previous correction invoice.
    */
-  async correctInvoice(invoice: string, options: InvoiceOptions, items: Array<LineItem> = []) {
-    return this.generateInvoice({ ...options, correctedInvoiceNumber: invoice }, items)
+  async correctInvoice(
+    invoice: string,
+    options: CorrectionInvoiceOptions,
+    items: Array<LineItem> = [],
+  ): Promise<InvoiceItemResponse> {
+    // szamlazz.hu requires the customer block to be present on a correction but ignores its contents.
+    return this.issueInvoice({ ...options, customer: { name: '', zip: '', city: '', address: '' } }, items, invoice)
   }
 
   /**
@@ -285,7 +303,7 @@ export class Client {
    * invoice in its chain — cannot be stornoed; szamlazz.hu rejects the request.
    * Use {@link correctInvoice} with negated deltas to undo a correction instead.
    */
-  async reverseInvoice(invoice: string, options: ReverseInvoiceOptions) {
+  async reverseInvoice(invoice: string, options: ReverseInvoiceOptions): Promise<InvoiceItemResponse> {
     const doc = {
       xmlszamlast: {
         '@xmlns': 'http://www.szamlazz.hu/xmlszamlast',

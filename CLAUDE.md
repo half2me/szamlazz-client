@@ -30,7 +30,7 @@ has taken; the live suite uses `SZCT`, overridable with `SZAMLAZZ_RECEIPT_PREFIX
 
 ## Architecture
 
-This is a TypeScript client library for the [szamlazz.hu](https://szamlazz.hu) Hungarian invoicing API. It requires Node.js 20+.
+This is a TypeScript client library for the [szamlazz.hu](https://szamlazz.hu) Hungarian invoicing API. It requires Node.js 22+.
 
 ### Core Components
 
@@ -67,7 +67,7 @@ This is a TypeScript client library for the [szamlazz.hu](https://szamlazz.hu) H
 ### Client Methods
 
 - `generateInvoice(options, items)` - Creates an invoice, returns invoice number and optional PDF
-- `correctInvoice(invoiceNumber, options, items)` - Creates a correction invoice (helyesbítő számla) for an existing invoice; the original stays valid alongside the correction. The `items` are the correction deltas (typically the original items negated plus the corrected items). Equivalent to `generateInvoice` with `correctedInvoiceNumber` set.
+- `correctInvoice(invoiceNumber, options, items)` - Creates a correction invoice (helyesbítő számla) for an existing invoice; the original stays valid alongside the correction. The `items` are the correction deltas (typically the original items negated plus the corrected items). The only way to issue a correction. It takes no `customer`: a correction cannot change the partner, and szamlazz.hu requires the customer block to be present but ignores it, so the client sends an empty one.
 - `reverseInvoice(invoiceNumber, options)` - Creates a reversal/storno invoice
 - `findInvoice(query, options?)` - Looks up an already-issued document by invoice number, order number or
   external id. Returns `null` when there is no such document instead of throwing, because szamlazz.hu
