@@ -30,7 +30,7 @@ has taken; the live suite uses `SZCT`, overridable with `SZAMLAZZ_RECEIPT_PREFIX
 
 ## Architecture
 
-This is a TypeScript client library for the [szamlazz.hu](https://szamlazz.hu) Hungarian invoicing API. It requires Node.js 22+.
+This is a TypeScript client library for the [szamlazz.hu](https://szamlazz.hu) Hungarian invoicing API. It requires Node.js 26+.
 
 ### Core Components
 
