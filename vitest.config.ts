@@ -10,6 +10,10 @@ import { defineConfig } from 'vitest/config'
  * `pnpm test` runs unit, `pnpm test:live` runs live, `pnpm test:all` runs both.
  */
 export default defineConfig({
+  // Vite hands esbuild the `target` from tsconfig.json, where @tsconfig/node26 sets es2025, a value
+  // the esbuild bundled with Vite 7 does not recognise yet. Only the test transform reads this;
+  // `pnpm build` is tsc.
+  esbuild: { tsconfigRaw: { compilerOptions: { target: 'es2024' } } },
   test: {
     projects: [
       {
