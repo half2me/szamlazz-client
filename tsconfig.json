@@ -2,14 +2,12 @@
   "extends": "@tsconfig/node26/tsconfig.json",
   "compilerOptions": {
     "declaration": true,
+    "isolatedDeclarations": true,
     "noImplicitReturns": true,
     "noUnusedLocals": true,
-    "noImplicitAny": true,
     "verbatimModuleSyntax": true,
     "strict": true,
-    "rootDir": "./src",
-    "outDir": "./dist"
+    "noEmit": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src/**/*"]
 }

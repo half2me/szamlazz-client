@@ -5,9 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build Commands
 
 ```bash
-pnpm build      # Compile TypeScript to dist/
+pnpm build      # Compile src/ to dist/ (tsconfig.build.json, which leaves the tests out)
 pnpm dev        # Watch mode compilation
-pnpm typecheck  # tsc --noEmit
+pnpm typecheck  # Type-check everything under src/, tests included (tsconfig.json)
 pnpm test       # Unit suite: no network, about a second
 pnpm test:live  # Live suite, against the szamlazz.hu demo account
 pnpm test:all   # Both
