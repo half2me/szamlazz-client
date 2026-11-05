@@ -30,21 +30,7 @@ export enum PaymentMethod {
 export type Currency = 'HUF' | 'EUR' | 'USD' | 'GBP' | 'CHF' | 'JPY' | 'CNY' | 'CZK' | 'PLN' | 'RON'
 
 export type LanguageCode =
-  | 'hu'
-  | 'en'
-  | 'de'
-  | 'it'
-  | 'ro'
-  | 'sk'
-  | 'hr'
-  | 'fr'
-  | 'es'
-  | 'cz'
-  | 'pl'
-  | 'bg'
-  | 'nl'
-  | 'ru'
-  | 'si'
+  'hu' | 'en' | 'de' | 'it' | 'ro' | 'sk' | 'hr' | 'fr' | 'es' | 'cz' | 'pl' | 'bg' | 'nl' | 'ru' | 'si'
 
 export enum InvoiceTemplate {
   SzlaMost = 'SzlaMost',
@@ -74,16 +60,13 @@ export interface InvoiceOptions {
   settled?: boolean
   downloadPDF?: boolean
   externalId?: string
-  /**
-   * When set, the invoice is issued as a correction invoice (helyesbítő számla)
-   * for the invoice with this number. This must always be the original invoice
-   * number — a correction invoice itself cannot be corrected, but the same
-   * original may be corrected repeatedly. The line items should contain the
-   * correction deltas (typically the original items negated and the corrected
-   * items added).
-   */
-  correctedInvoiceNumber?: string
 }
+
+/**
+ * Options for a correction invoice (helyesbítő számla): {@link InvoiceOptions}
+ * without `customer`, because a correction cannot change the partner.
+ */
+export type CorrectionInvoiceOptions = Omit<InvoiceOptions, 'customer'>
 
 export type ReverseInvoiceOptions = Pick<InvoiceOptions, 'eInvoice' | 'issueDate' | 'completionDate' | 'downloadPDF'>
 
